@@ -37,7 +37,11 @@ jobs:
       - name: gen-sln
         run : |
           mkdir build
-          cd build
+          cd ./build
           cd
+          dir
+          cd ..
+          dir
+          
           cmake --version
           
