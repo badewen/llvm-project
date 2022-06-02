@@ -37,8 +37,8 @@ jobs:
       - name: gen-sln
         run : |
           mkdir build
+          cmake -S llvm -B build 
           cd ./build
-          cmake .. -S llvm
           nmake
           
       - name: upload-artifact
