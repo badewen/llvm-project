@@ -40,11 +40,19 @@ jobs:
           cmake -S llvm -B build -G"Ninja" -DCMAKE_BUILD_TYPE=Release
           cd ./build
           ninja
-
+          cd ..
+      - name: Compress action step
+        uses: a7ul/tar-action@v1.1.0
+        id: compress
+        with:
+          command: c
+          files: |
+            ./build
+          outPath: build.tar.gz
           
       - name: upload-artifact
         uses: actions/upload-artifact@v3
         with:
           name: bin
-          path: D:\a\llvm-project\llvm-project\build
+          path: .\build.tar.gz
           
