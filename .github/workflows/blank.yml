@@ -41,7 +41,7 @@ jobs:
           mkdir build
           cmake -S llvm -B build -G"Visual Studio 17 2022"
           cd ./build
-          acho lalalalallaalalala
+          echo lalalalallaalalala
           dir
 
           
