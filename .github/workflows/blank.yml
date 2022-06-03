@@ -39,10 +39,9 @@ jobs:
       - name: gen-sln
         run : |
           mkdir build
-          cmake -S llvm -B build -G"Visual Studio 17 2022"
+          cmake -S llvm -B build -G"Visual Studio 17 2022" -DCMAKE_BUILD_TYPE=Release
           cd ./build
-          echo lalalalallaalalala
-          dir
+          msbuild LLVM.sln -m 
 
           
       - name: upload-artifact
