@@ -43,7 +43,7 @@ jobs:
         run: |
           mkdir build
           cmake -G Ninja -S llvm -B build -DLLVM_ENABLE_PROJECTS="all" -DLLVM_RUNTIME_TARGETS="x86_64-pc-windows-msvc" -DCMAKE_BUILD_TYPE=Release -DLLVM_HOST_TRIPLE="x86_64-pc-windows-msvc" -DCMAKE_CXX_FLAGS="-Wno-language-extension-token" -DLLVM_ENABLE_EH=ON -DLLVM_ENABLE_RTTI=ON
-          ninja -C build                                                               
+          ninja --build build                                                              
 
       - name: compress
         run: |
