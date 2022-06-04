@@ -42,9 +42,9 @@ jobs:
       - name : build
         run: |
           mkdir build
-          cmake -G Ninja -S runtimes -B build -DLLVM_ENABLE_RUNTIMES="libcxx;libcxxabi;libunwind" -DCMAKE_BUILD_TYPE=Release
-          cd build
-          ninja                                                              
+          cmake -G Ninja -S llvm -B build -DLLVM_ENABLE_PROJECTS="clang" -DLLVM_ENABLE_RUNTIMES="libcxx;libcxxabi;libunwind" -DLLVM_RUNTIME_TARGETS="x86_64-pc-windows-msvc" -DCMAKE_BUILD_TYPE=Release
+          ninja -C build runtimes                                                                
+
       - name: compress
         run: |
           tar cfJ build.tar.xz ./build
