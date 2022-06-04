@@ -42,8 +42,9 @@ jobs:
       - name : build
         run: |
           mkdir build
-          cmake -G Ninja -S llvm -B build -DLLVM_ENABLE_PROJECTS="clang" -DLLVM_ENABLE_RUNTIMES="libcxx;libcxxabi;libunwind" -DLLVM_RUNTIME_TARGETS="x86_64-pc-windows-msvc" -DCMAKE_BUILD_TYPE=Release -DLLVM_HOST_TRIPLE="x86_64-pc-windows-msvc" -DCMAKE_CXX_FLAGS="-Wno-language-extension-token"
-          ninja -C build runtimes                                                                
+          cmake -G Ninja -S llvm -B build -DLLVM_ENABLE_PROJECTS="clang;clang-tools-extra;compiler-rt;cross-project-tests;libc;libclc;libcxx;libcxxabi;libunwind;lld;lldb;openmp;parallel-libs;polly;pstl" \
+                                          -DLLVM_RUNTIME_TARGETS="x86_64-pc-windows-msvc" -DCMAKE_BUILD_TYPE=Release -DLLVM_HOST_TRIPLE="x86_64-pc-windows-msvc" -DCMAKE_CXX_FLAGS="-Wno-language-extension-token" -DLLVM_ENABLE_EH=ON -DLLVM_ENABLE_RTTI=ON
+          ninja -C build                                                               
 
       - name: compress
         run: |
