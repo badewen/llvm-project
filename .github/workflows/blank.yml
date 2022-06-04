@@ -38,7 +38,7 @@ jobs:
         run : |
           mkdir build
           cmake -G Ninja -S llvm -B build -DLLVM_ENABLE_PROJECTS="clang" -DCMAKE_BUILD_TYPE=Release
-          ninja -C build runtimes                                                                       
+          ninja -C build                                                                  
       - name: Compress action step
         uses: a7ul/tar-action@v1.1.0
         id: compress
