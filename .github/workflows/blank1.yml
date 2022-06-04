@@ -30,4 +30,15 @@ jobs:
          version: "10.0"
       - name : test-clang
         run: |
-          clang -v
+          mkdir build
+          cmake -G Ninja -S runtimes -B build -DLLVM_ENABLE_RUNTIMES="libcxx;libcxxabi;libunwind" -DCMAKE_BUILD_TYPE=Release
+          ninja -C build cxx cxxabi unwind 
+          
+      - name: compress
+        run: |
+          tar cfJ build.tar.xz ./build
+      - name : upload build artifact
+        uses: actions/upload-artifact@latest
+        with:
+          name: libcxx
+          path: build.tar.xz
