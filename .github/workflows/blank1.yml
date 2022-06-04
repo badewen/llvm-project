@@ -27,7 +27,7 @@ jobs:
       - name: clang-setup
         uses: KyleMayes/install-llvm-action@v1
         with:
-         version: "14.0.4"
+         version: "14.0"
       - name : test-clang
         run: |
           mkdir build
