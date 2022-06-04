@@ -37,7 +37,7 @@ jobs:
       - name: build
         run : |
           mkdir build
-          cmake -G Ninja -S llvm -B build -DLLVM_ENABLE_PROJECTS="clang"  -DLLVM_RUNTIME_TARGETS="x86_64-unknown-windows-msvc" -DCMAKE_BUILD_TYPE=Release -DLLVM_TARGET_ARCH="x86_64-unknown-windows-msvc"
+          cmake -G Ninja -S llvm -B build -DLLVM_ENABLE_PROJECTS="clang"  -DLLVM_RUNTIME_TARGETS="x86_64-unknown-windows-msvc" -DCMAKE_BUILD_TYPE=Release -DLLVM_DEFAULT_TARGET_TRIPLE="x86_64-pc-windows-msvc"
           ninja -C build                                                                  
       - name: Compress action step
         uses: a7ul/tar-action@v1.1.0
