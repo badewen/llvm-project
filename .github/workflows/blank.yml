@@ -58,7 +58,6 @@ jobs:
         id: compress
         with:
           command: c
-          cwd: .
           files: |
             ./build
           outPath: build.tar.gz
