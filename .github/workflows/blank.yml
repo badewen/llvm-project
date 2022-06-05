@@ -50,15 +50,21 @@ jobs:
           set CXX=cl
           cmake -GNinja -DLLVM_ENABLE_PROJECTS="bolt;clang;clang-tools-extra;compiler-rt;cross-project-tests;libc;libclc;libcxx;libcxxabi;libunwind;lld;lldb" ..\llvm -DCMAKE_BUILD_TYPE=Release -DLLVM_DEFAULT_TARGET_TRIPLE="x86_64-pc-windows-msvc" 
           ninja  -w dupbuild=warn 
-          
+          cd ..
           
 
       - name: compress
-        run: |
-          tar cfJ build.tar.xz ./build
+        uses: a7ul/tar-action@v1.1.0
+        id: compress
+        with:
+          command: c
+          cwd: .
+          files: |
+            ./build
+          outPath: build.tar.gz
       - name: upload-artifact
         uses: actions/upload-artifact@v3
         with:
           name: everithing
-          path: .\build.tar.xz
+          path: .\build.tar.gz
           
