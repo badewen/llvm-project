@@ -48,9 +48,8 @@ jobs:
           cd build
           set CC=cl
           set CXX=cl
-          cmake -GNinja -DLLVM_ENABLE_PROJECTS=clang ..\llvm -DCMAKE_BUILD_TYPE=Release 
-          ninja clang
-          ninja check-clang
+          cmake -GNinja -DLLVM_ENABLE_PROJECTS="all" ..\llvm -DCMAKE_BUILD_TYPE=Release  
+          ninja -Wdupbuild=warn
           
       - name: compress
         run: |
