@@ -25,7 +25,10 @@ jobs:
     
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
       - uses: actions/checkout@v3
-
+        with:
+          ref: refs/tags/llvmorg-14.0.4
+        
+        
       - name: Setup cmake
         uses: jwlawson/actions-setup-cmake@v1.12
         with:
