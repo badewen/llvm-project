@@ -49,7 +49,7 @@ jobs:
           set CC=cl
           set CXX=cl
           cmake -GNinja -DLLVM_ENABLE_PROJECTS="all" ..\llvm -DCMAKE_BUILD_TYPE=Release  
-          ninja -Wdupbuild=warn
+          ninja  -w dupbuild=warn 
           
       - name: compress
         run: |
