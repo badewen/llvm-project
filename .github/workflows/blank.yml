@@ -36,18 +36,22 @@ jobs:
          
       - name: setup ninja
         uses: seanmiddleditch/gha-setup-ninja@master
-      
-      - name: clang-setup
-        uses: KyleMayes/install-llvm-action@v1
+       
+      - name: dev-cmd
+        uses: ilammy/msvc-dev-cmd@v1
         with:
-         version: "14.0"
-         
+          arch: amd64_x86
+        
       - name : build
         run: |
           mkdir build
-          cmake -G Ninja -S llvm -B build -DLLVM_ENABLE_PROJECTS="all" -DLLVM_RUNTIME_TARGETS="x86_64-pc-windows-msvc" -DCMAKE_BUILD_TYPE=Release -DLLVM_HOST_TRIPLE="x86_64-pc-windows-msvc" -DCMAKE_CXX_FLAGS="-Wno-language-extension-token" -DLLVM_ENABLE_EH=ON -DLLVM_ENABLE_RTTI=ON
-          ninja -C build   -w dupbuild=warn                                                            
-
+          cd build
+          set CC=cl
+          set CXX=cl
+          cmake -GNinja -DLLVM_ENABLE_PROJECTS=clang ..\llvm -DCMAKE_BUILD_TYPE=Release 
+          ninja clang
+          ninja check-clang
+          
       - name: compress
         run: |
           tar cfJ build.tar.xz ./build
