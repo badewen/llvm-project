@@ -61,9 +61,25 @@ jobs:
           files: |
             ./build/bin
           outPath: build.tar.gz
+      
+      - name: compress_
+        uses: a7ul/tar-action@v1.1.0
+        id: compress1
+        with:
+          command: c
+          files: |
+            ./build
+          outPath: full_build.tar.gz
+          
       - name: upload-artifact
         uses: actions/upload-artifact@v3
         with:
-          name: everithing
+          name: bin_only
           path: .\build.tar.gz
-          
+        
+        
+      - name: upload-artifact_full
+        uses: actions/upload-artifact@v3
+        with:
+          name: full_build_output
+          path: .\full.tar.gz
