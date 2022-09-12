@@ -9,9 +9,8 @@ from lldbsuite.test import lldbutil
 
 class TestDbgInfoContentDeque(TestBase):
 
-    mydir = TestBase.compute_mydir(__file__)
-
     @add_test_categories(["libc++"])
+    @expectedFailureDarwin # FIXME: May need to force system libcxx here.
     @skipIf(compiler=no_match("clang"))
     def test(self):
         self.build()
@@ -23,16 +22,16 @@ class TestDbgInfoContentDeque(TestBase):
         self.runCmd("settings set target.import-std-module true")
 
         deque_type = "std::deque<Foo>"
-        size_type = deque_type + "::size_type"
-        value_type = "std::__deque_base<Foo, std::allocator<Foo> >::value_type"
+        size_type = "size_type"
+        value_type = "value_type"
 
-        iterator_type = deque_type + "::iterator"
+        iterator_type = "iterator"
         iterator_children = [
             ValueCheck(name="__m_iter_"),
             ValueCheck(name="__ptr_")
         ]
 
-        riterator_type = deque_type + "::reverse_iterator"
+        riterator_type = "reverse_iterator"
         riterator_children = [
             ValueCheck(name="__t"),
             ValueCheck(name="current")

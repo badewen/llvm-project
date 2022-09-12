@@ -89,6 +89,9 @@ public:
   MutableArrayRef<int64_t> getRow(unsigned row);
   ArrayRef<int64_t> getRow(unsigned row) const;
 
+  /// Set the specified row to `elems`.
+  void setRow(unsigned row, ArrayRef<int64_t> elems);
+
   /// Insert columns having positions pos, pos + 1, ... pos + count - 1.
   /// Columns that were at positions 0 to pos - 1 will stay where they are;
   /// columns that were at positions pos to nColumns - 1 will be pushed to the
@@ -125,6 +128,8 @@ public:
 
   /// Add `scale` multiples of the source row to the target row.
   void addToRow(unsigned sourceRow, unsigned targetRow, int64_t scale);
+  /// Add `scale` multiples of the rowVec row to the specified row.
+  void addToRow(unsigned row, ArrayRef<int64_t> rowVec, int64_t scale);
 
   /// Add `scale` multiples of the source column to the target column.
   void addToColumn(unsigned sourceColumn, unsigned targetColumn, int64_t scale);

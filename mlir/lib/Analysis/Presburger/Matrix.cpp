@@ -92,6 +92,13 @@ ArrayRef<int64_t> Matrix::getRow(unsigned row) const {
   return {&data[row * nReservedColumns], nColumns};
 }
 
+void Matrix::setRow(unsigned row, ArrayRef<int64_t> elems) {
+  assert(elems.size() == getNumColumns() &&
+         "elems size must match row length!");
+  for (unsigned i = 0, e = getNumColumns(); i < e; ++i)
+    at(row, i) = elems[i];
+}
+
 void Matrix::insertColumn(unsigned pos) { insertColumns(pos, 1); }
 void Matrix::insertColumns(unsigned pos, unsigned count) {
   if (count == 0)
@@ -185,10 +192,14 @@ void Matrix::fillRow(unsigned row, int64_t value) {
 }
 
 void Matrix::addToRow(unsigned sourceRow, unsigned targetRow, int64_t scale) {
+  addToRow(targetRow, getRow(sourceRow), scale);
+}
+
+void Matrix::addToRow(unsigned row, ArrayRef<int64_t> rowVec, int64_t scale) {
   if (scale == 0)
     return;
   for (unsigned col = 0; col < nColumns; ++col)
-    at(targetRow, col) += scale * at(sourceRow, col);
+    at(row, col) += scale * rowVec[col];
 }
 
 void Matrix::addToColumn(unsigned sourceColumn, unsigned targetColumn,

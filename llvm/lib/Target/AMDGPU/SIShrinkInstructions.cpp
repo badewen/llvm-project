@@ -48,6 +48,7 @@ public:
   void shrinkMIMG(MachineInstr &MI) const;
   void shrinkMadFma(MachineInstr &MI) const;
   bool shrinkScalarLogicOp(MachineInstr &MI) const;
+  bool tryReplaceDeadSDST(MachineInstr &MI) const;
   bool instAccessReg(iterator_range<MachineInstr::const_mop_iterator> &&R,
                      Register Reg, unsigned SubReg) const;
   bool instReadsReg(const MachineInstr *MI, unsigned Reg,
@@ -237,8 +238,20 @@ void SIShrinkInstructions::shrinkScalarCompare(MachineInstr &MI) const {
 // Shrink NSA encoded instructions with contiguous VGPRs to non-NSA encoding.
 void SIShrinkInstructions::shrinkMIMG(MachineInstr &MI) const {
   const AMDGPU::MIMGInfo *Info = AMDGPU::getMIMGInfo(MI.getOpcode());
-  if (!Info || Info->MIMGEncoding != AMDGPU::MIMGEncGfx10NSA)
+  if (!Info)
     return;
+
+  uint8_t NewEncoding;
+  switch (Info->MIMGEncoding) {
+  case AMDGPU::MIMGEncGfx10NSA:
+    NewEncoding = AMDGPU::MIMGEncGfx10Default;
+    break;
+  case AMDGPU::MIMGEncGfx11NSA:
+    NewEncoding = AMDGPU::MIMGEncGfx11Default;
+    break;
+  default:
+    return;
+  }
 
   int VAddr0Idx =
       AMDGPU::getNamedOperandIdx(MI.getOpcode(), AMDGPU::OpName::vaddr0);
@@ -265,16 +278,23 @@ void SIShrinkInstructions::shrinkMIMG(MachineInstr &MI) const {
   }
 
   unsigned VgprBase = 0;
+  unsigned NextVgpr = 0;
   bool IsUndef = true;
   bool IsKill = NewAddrDwords == Info->VAddrDwords;
-  for (unsigned i = 0; i < Info->VAddrDwords; ++i) {
-    const MachineOperand &Op = MI.getOperand(VAddr0Idx + i);
+  for (unsigned Idx = 0; Idx < Info->VAddrOperands; ++Idx) {
+    const MachineOperand &Op = MI.getOperand(VAddr0Idx + Idx);
     unsigned Vgpr = TRI->getHWRegIndex(Op.getReg());
+    unsigned Dwords = TRI->getRegSizeInBits(Op.getReg(), *MRI) / 32;
+    assert(Dwords > 0 && "Un-implemented for less than 32 bit regs");
 
-    if (i == 0) {
+    if (Idx == 0) {
       VgprBase = Vgpr;
-    } else if (VgprBase + i != Vgpr)
+      NextVgpr = Vgpr + Dwords;
+    } else if (Vgpr == NextVgpr) {
+      NextVgpr = Vgpr + Dwords;
+    } else {
       return;
+    }
 
     if (!Op.isUndef())
       IsUndef = false;
@@ -307,21 +327,20 @@ void SIShrinkInstructions::shrinkMIMG(MachineInstr &MI) const {
     }
   }
 
-  unsigned NewOpcode =
-      AMDGPU::getMIMGOpcode(Info->BaseOpcode, AMDGPU::MIMGEncGfx10Default,
-                            Info->VDataDwords, NewAddrDwords);
+  unsigned NewOpcode = AMDGPU::getMIMGOpcode(Info->BaseOpcode, NewEncoding,
+                                             Info->VDataDwords, NewAddrDwords);
   MI.setDesc(TII->get(NewOpcode));
   MI.getOperand(VAddr0Idx).setReg(RC->getRegister(VgprBase));
   MI.getOperand(VAddr0Idx).setIsUndef(IsUndef);
   MI.getOperand(VAddr0Idx).setIsKill(IsKill);
 
-  for (unsigned i = 1; i < Info->VAddrDwords; ++i)
+  for (int i = 1; i < Info->VAddrOperands; ++i)
     MI.removeOperand(VAddr0Idx + 1);
 
   if (ToUntie >= 0) {
     MI.tieOperands(
         AMDGPU::getNamedOperandIdx(MI.getOpcode(), AMDGPU::OpName::vdata),
-        ToUntie - (Info->VAddrDwords - 1));
+        ToUntie - (Info->VAddrOperands - 1));
   }
 }
 
@@ -363,6 +382,7 @@ void SIShrinkInstructions::shrinkMadFma(MachineInstr &MI) const {
       NewOpcode = AMDGPU::V_MADAK_F16;
       break;
     case AMDGPU::V_FMA_F16_e64:
+    case AMDGPU::V_FMA_F16_gfx9_e64:
       NewOpcode = AMDGPU::V_FMAAK_F16;
       break;
     }
@@ -390,6 +410,7 @@ void SIShrinkInstructions::shrinkMadFma(MachineInstr &MI) const {
       NewOpcode = AMDGPU::V_MADMK_F16;
       break;
     case AMDGPU::V_FMA_F16_e64:
+    case AMDGPU::V_FMA_F16_gfx9_e64:
       NewOpcode = AMDGPU::V_FMAMK_F16;
       break;
     }
@@ -689,6 +710,22 @@ MachineInstr *SIShrinkInstructions::matchSwap(MachineInstr &MovT) const {
   return nullptr;
 }
 
+// If an instruction has dead sdst replace it with NULL register on gfx1030+
+bool SIShrinkInstructions::tryReplaceDeadSDST(MachineInstr &MI) const {
+  if (!ST->hasGFX10_3Insts())
+    return false;
+
+  MachineOperand *Op = TII->getNamedOperand(MI, AMDGPU::OpName::sdst);
+  if (!Op)
+    return false;
+  Register SDstReg = Op->getReg();
+  if (SDstReg.isPhysical() || !MRI->use_nodbg_empty(SDstReg))
+    return false;
+
+  Op->setReg(ST->isWave32() ? AMDGPU::SGPR_NULL : AMDGPU::SGPR_NULL64);
+  return true;
+}
+
 bool SIShrinkInstructions::runOnMachineFunction(MachineFunction &MF) {
   if (skipFunction(MF.getFunction()))
     return false;
@@ -817,20 +854,27 @@ bool SIShrinkInstructions::runOnMachineFunction(MachineFunction &MF) {
       if (MI.getOpcode() == AMDGPU::V_MAD_F32_e64 ||
           MI.getOpcode() == AMDGPU::V_FMA_F32_e64 ||
           MI.getOpcode() == AMDGPU::V_MAD_F16_e64 ||
-          MI.getOpcode() == AMDGPU::V_FMA_F16_e64) {
+          MI.getOpcode() == AMDGPU::V_FMA_F16_e64 ||
+          MI.getOpcode() == AMDGPU::V_FMA_F16_gfx9_e64) {
         shrinkMadFma(MI);
         continue;
       }
 
-      if (!TII->hasVALU32BitEncoding(MI.getOpcode()))
+      if (!TII->hasVALU32BitEncoding(MI.getOpcode())) {
+        // If there is no chance we will shrink it and use VCC as sdst to get
+        // a 32 bit form try to replace dead sdst with NULL.
+        tryReplaceDeadSDST(MI);
         continue;
+      }
 
       if (!TII->canShrink(MI, *MRI)) {
         // Try commuting the instruction and see if that enables us to shrink
         // it.
         if (!MI.isCommutable() || !TII->commuteInstruction(MI) ||
-            !TII->canShrink(MI, *MRI))
+            !TII->canShrink(MI, *MRI)) {
+          tryReplaceDeadSDST(MI);
           continue;
+        }
       }
 
       int Op32 = AMDGPU::getVOPe32(MI.getOpcode());

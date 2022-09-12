@@ -245,7 +245,7 @@ INITIALIZE_PASS(Thumb2SizeReduce, DEBUG_TYPE, THUMB2_SIZE_REDUCE_NAME, false,
 Thumb2SizeReduce::Thumb2SizeReduce(std::function<bool(const Function &)> Ftor)
     : MachineFunctionPass(ID), PredicateFtor(std::move(Ftor)) {
   OptimizeSize = MinimizeSize = false;
-  for (unsigned i = 0, e = array_lengthof(ReduceTable); i != e; ++i) {
+  for (unsigned i = 0, e = std::size(ReduceTable); i != e; ++i) {
     unsigned FromOpc = ReduceTable[i].WideOpc;
     if (!ReduceOpcodeMap.insert(std::make_pair(FromOpc, i)).second)
       llvm_unreachable("Duplicated entries?");
@@ -621,7 +621,7 @@ Thumb2SizeReduce::ReduceLoadStore(MachineBasicBlock &MBB, MachineInstr *MI,
   // Transfer MI flags.
   MIB.setMIFlags(MI->getFlags());
 
-  LLVM_DEBUG(errs() << "Converted 32-bit: " << *MI
+  LLVM_DEBUG(dbgs() << "Converted 32-bit: " << *MI
                     << "       to 16-bit: " << *MIB);
 
   MBB.erase_instr(MI);
@@ -669,7 +669,7 @@ Thumb2SizeReduce::ReduceSpecial(MachineBasicBlock &MBB, MachineInstr *MI,
     // Transfer MI flags.
     MIB.setMIFlags(MI->getFlags());
 
-    LLVM_DEBUG(errs() << "Converted 32-bit: " << *MI
+    LLVM_DEBUG(dbgs() << "Converted 32-bit: " << *MI
                       << "       to 16-bit: " << *MIB);
 
     MBB.erase_instr(MI);
@@ -694,7 +694,7 @@ Thumb2SizeReduce::ReduceSpecial(MachineBasicBlock &MBB, MachineInstr *MI,
       case ARM::t2ADDSri:
         if (ReduceTo2Addr(MBB, MI, Entry, LiveCPSR, IsSelfLoop))
           return true;
-        LLVM_FALLTHROUGH;
+        [[fallthrough]];
       case ARM::t2ADDSrr:
         return ReduceToNarrow(MBB, MI, Entry, LiveCPSR, IsSelfLoop);
       }
@@ -849,7 +849,7 @@ Thumb2SizeReduce::ReduceTo2Addr(MachineBasicBlock &MBB, MachineInstr *MI,
   // Transfer MI flags.
   MIB.setMIFlags(MI->getFlags());
 
-  LLVM_DEBUG(errs() << "Converted 32-bit: " << *MI
+  LLVM_DEBUG(dbgs() << "Converted 32-bit: " << *MI
                     << "       to 16-bit: " << *MIB);
 
   MBB.erase_instr(MI);
@@ -972,7 +972,7 @@ Thumb2SizeReduce::ReduceToNarrow(MachineBasicBlock &MBB, MachineInstr *MI,
   // Transfer MI flags.
   MIB.setMIFlags(MI->getFlags());
 
-  LLVM_DEBUG(errs() << "Converted 32-bit: " << *MI
+  LLVM_DEBUG(dbgs() << "Converted 32-bit: " << *MI
                     << "       to 16-bit: " << *MIB);
 
   MBB.erase_instr(MI);

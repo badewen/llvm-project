@@ -17,6 +17,7 @@
 #include "mlir/Analysis/Presburger/IntegerRelation.h"
 #include "mlir/Analysis/Presburger/PWMAFunction.h"
 #include "mlir/Analysis/Presburger/PresburgerRelation.h"
+#include "mlir/Analysis/Presburger/Simplex.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/Support/LLVM.h"
 
@@ -40,9 +41,10 @@ inline IntegerPolyhedron parsePoly(StringRef str) {
 /// are all valid IntegerSet representation and that all of them have the same
 /// number of dimensions as is specified by the numDims argument.
 inline PresburgerSet
-parsePresburgerSetFromPolyStrings(unsigned numDims, ArrayRef<StringRef> strs) {
-  PresburgerSet set =
-      PresburgerSet::getEmpty(PresburgerSpace::getSetSpace(numDims));
+parsePresburgerSetFromPolyStrings(unsigned numDims, ArrayRef<StringRef> strs,
+                                  unsigned numSymbols = 0) {
+  PresburgerSet set = PresburgerSet::getEmpty(
+      PresburgerSpace::getSetSpace(numDims, numSymbols));
   for (StringRef str : strs)
     set.unionInPlace(parsePoly(str));
   return set;
@@ -72,13 +74,19 @@ inline PWMAFunction parsePWMAF(
   static MLIRContext context;
 
   PWMAFunction result(
-      PresburgerSpace::getSetSpace(numInputs - numSymbols, numSymbols),
-      numOutputs);
+      PresburgerSpace::getRelationSpace(numInputs, numOutputs, numSymbols));
   for (const auto &pair : data) {
     IntegerPolyhedron domain = parsePoly(pair.first);
 
+    PresburgerSpace funcSpace = result.getSpace();
+    funcSpace.insertVar(VarKind::Local, 0, domain.getNumLocalVars());
+
     result.addPiece(
-        domain, makeMatrix(numOutputs, domain.getNumIds() + 1, pair.second));
+        {PresburgerSet(domain),
+         MultiAffineFunction(
+             funcSpace,
+             makeMatrix(numOutputs, domain.getNumVars() + 1, pair.second),
+             domain.getLocalReprs())});
   }
   return result;
 }

@@ -106,7 +106,7 @@
 ; CHECK-O23SZ-NEXT: Running analysis: AAManager on foo
 ; CHECK-O23SZ-NEXT: Running analysis: ScalarEvolutionAnalysis on foo
 ; CHECK-O23SZ-NEXT: Running analysis: InnerAnalysisManagerProxy
-; CHECK-O23SZ-NEXT: Running pass: LICMPass on Loop
+; CHECK-O23SZ-NEXT: Running pass: LICMPass on loop
 ; CHECK-O23SZ-NEXT: Running pass: GVNPass on foo
 ; CHECK-O23SZ-NEXT: Running analysis: MemoryDependenceAnalysis on foo
 ; CHECK-O23SZ-NEXT: Running analysis: PhiValuesAnalysis on foo
@@ -116,9 +116,9 @@
 ; CHECK-O23SZ-NEXT: Running pass: MergedLoadStoreMotionPass on foo
 ; CHECK-O23SZ-NEXT: Running pass: LoopSimplifyPass on foo
 ; CHECK-O23SZ-NEXT: Running pass: LCSSAPass on foo
-; CHECK-O23SZ-NEXT: Running pass: IndVarSimplifyPass on Loop
-; CHECK-O23SZ-NEXT: Running pass: LoopDeletionPass on Loop
-; CHECK-O23SZ-NEXT: Running pass: LoopFullUnrollPass on Loop
+; CHECK-O23SZ-NEXT: Running pass: IndVarSimplifyPass on loop
+; CHECK-O23SZ-NEXT: Running pass: LoopDeletionPass on loop
+; CHECK-O23SZ-NEXT: Running pass: LoopFullUnrollPass on loop
 ; CHECK-O23SZ-NEXT: Running pass: LoopDistributePass on foo
 ; CHECK-O23SZ-NEXT: Running pass: LoopVectorizePass on foo
 ; CHECK-O23SZ-NEXT: Running analysis: BlockFrequencyAnalysis on foo
@@ -144,6 +144,7 @@
 ; CHECK-O23SZ-NEXT: Running pass: SimplifyCFGPass
 ; CHECK-O23SZ-NEXT: Running pass: EliminateAvailableExternallyPass
 ; CHECK-O23SZ-NEXT: Running pass: GlobalDCEPass
+; CHECK-O23SZ-NEXT: Running pass: CGProfilePass
 ; CHECK-EP-NEXT: Running pass: NoOpModulePass
 ; CHECK-O-NEXT: Running pass: AnnotationRemarksPass on foo
 ; CHECK-O-NEXT: Running pass: PrintModulePass

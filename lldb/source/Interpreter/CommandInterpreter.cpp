@@ -212,7 +212,7 @@ bool CommandInterpreter::SetQuitExitCode(int exit_code) {
 }
 
 int CommandInterpreter::GetQuitExitCode(bool &exited) const {
-  exited = m_quit_exit_code.hasValue();
+  exited = m_quit_exit_code.has_value();
   if (exited)
     return *m_quit_exit_code;
   return 0;
@@ -561,7 +561,7 @@ void CommandInterpreter::LoadCommandDictionary() {
        "breakpoint set --name '%1'"}};
   // clang-format on
 
-  size_t num_regexes = llvm::array_lengthof(break_regexes);
+  size_t num_regexes = std::size(break_regexes);
 
   std::unique_ptr<CommandObjectRegexCommand> break_regex_cmd_up(
       new CommandObjectRegexCommand(

@@ -29,6 +29,7 @@ intermediate LLVM representation.
    CoverageMappingFormat
    CycleTerminology
    DebuggingJITedCode
+   DirectXUsage
    Docker
    ExtendingLLVM
    GoldPlugin
@@ -56,6 +57,7 @@ intermediate LLVM representation.
    ReportingGuide
    ResponseGuide
    Remarks
+   RISCVUsage
    SourceLevelDebugging
    SPIRVUsage
    StackSafetyAnalysis
@@ -247,3 +249,11 @@ Additional Topics
 
 :doc:`SPIRVUsage`
    This document describes using the SPIR-V target to compile GPU kernels.
+
+:doc:`DirectXUsage`
+   This document describes using the DirectX target to compile GPU code for the
+   DirectX runtime.
+
+:doc:`RISCVUsage`
+   This document describes using the RISCV-V target.
+

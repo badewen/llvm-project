@@ -131,6 +131,16 @@ void PathMappingList::Dump(Stream *s, int pair_index) {
   }
 }
 
+llvm::json::Value PathMappingList::ToJSON() {
+  llvm::json::Array entries;
+  for (const auto &pair : m_pairs) {
+    llvm::json::Array entry{pair.first.GetStringRef().str(),
+                            pair.second.GetStringRef().str()};
+    entries.emplace_back(std::move(entry));
+  }
+  return entries;
+}
+
 void PathMappingList::Clear(bool notify) {
   if (!m_pairs.empty())
     ++m_mod_id;
@@ -188,7 +198,7 @@ PathMappingList::RemapPath(llvm::StringRef mapping_path,
         continue;
     }
     FileSpec remapped(it.second.GetStringRef());
-    auto orig_style = FileSpec::GuessPathStyle(prefix).getValueOr(
+    auto orig_style = FileSpec::GuessPathStyle(prefix).value_or(
         llvm::sys::path::Style::native);
     AppendPathComponents(remapped, path, orig_style);
     if (!only_if_exists || FileSystem::Instance().Exists(remapped))
@@ -204,7 +214,7 @@ bool PathMappingList::ReverseRemapPath(const FileSpec &file, FileSpec &fixed) co
     if (!path_ref.consume_front(it.second.GetStringRef()))
       continue;
     auto orig_file = it.first.GetStringRef();
-    auto orig_style = FileSpec::GuessPathStyle(orig_file).getValueOr(
+    auto orig_style = FileSpec::GuessPathStyle(orig_file).value_or(
         llvm::sys::path::Style::native);
     fixed.SetFile(orig_file, orig_style);
     AppendPathComponents(fixed, path_ref, orig_style);

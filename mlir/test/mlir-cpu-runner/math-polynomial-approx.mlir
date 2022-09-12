@@ -1,8 +1,8 @@
 // RUN:   mlir-opt %s -pass-pipeline="func.func(test-math-polynomial-approximation,convert-arith-to-llvm),convert-vector-to-llvm,func.func(convert-math-to-llvm),convert-func-to-llvm,reconcile-unrealized-casts" \
 // RUN: | mlir-cpu-runner                                                      \
 // RUN:     -e main -entry-point-result=void -O0                               \
-// RUN:     -shared-libs=%linalg_test_lib_dir/libmlir_c_runner_utils%shlibext  \
-// RUN:     -shared-libs=%linalg_test_lib_dir/libmlir_runner_utils%shlibext    \
+// RUN:     -shared-libs=%mlir_lib_dir/libmlir_c_runner_utils%shlibext  \
+// RUN:     -shared-libs=%mlir_lib_dir/libmlir_runner_utils%shlibext    \
 // RUN: | FileCheck %s
 
 // -------------------------------------------------------------------------- //
@@ -80,7 +80,7 @@ func.func @log2() {
   %1 = math.log2 %0 : f32
   vector.print %1 : f32
 
-  // CHECK: -2, -0.415037, 0, 0.321928
+  // CHECK: -2, -0.415038, 0, 0.321928
   %2 = arith.constant dense<[0.25, 0.75, 1.0, 1.25]> : vector<4xf32>
   %3 = math.log2 %2 : vector<4xf32>
   vector.print %3 : vector<4xf32>
@@ -233,7 +233,7 @@ func.func @exp() {
   %1 = math.exp %0 : f32
   vector.print %1 : f32
 
-  // CHECK: 0.778802, 2.117, 2.71828, 3.85742
+  // CHECK: 0.778801, 2.117, 2.71828, 3.85743
   %2 = arith.constant dense<[-0.25, 0.75, 1.0, 1.35]> : vector<4xf32>
   %3 = math.exp %2 : vector<4xf32>
   vector.print %3 : vector<4xf32>
@@ -243,7 +243,7 @@ func.func @exp() {
   %exp_zero = math.exp %zero : f32
   vector.print %exp_zero : f32
 
-  // CHECK: 1.17549e-38, 1.38879e-11, 7.20049e+10, inf
+  // CHECK: 2.22736e-39, 1.38879e-11, 7.20049e+10, inf
   %special_vec = arith.constant dense<[-89.0, -25.0, 25.0, 89.0]> : vector<4xf32>
   %exp_special_vec = math.exp %special_vec : vector<4xf32>
   vector.print %exp_special_vec : vector<4xf32>
@@ -272,7 +272,7 @@ func.func @expm1() {
   %1 = math.expm1 %0 : f32
   vector.print %1 : f32
 
-  // CHECK: -0.00995016, 0.0100502, 0.648721, 6.38905
+  // CHECK: -0.00995017, 0.0100502, 0.648721, 6.38906
   %2 = arith.constant dense<[-0.01, 0.01, 0.5, 2.0]> : vector<4xf32>
   %3 = math.expm1 %2 : vector<4xf32>
   vector.print %3 : vector<4xf32>
@@ -346,37 +346,30 @@ func.func @sin() {
 // cos.
 // -------------------------------------------------------------------------- //
 
-func.func @cos() {
+func.func @cos(%zero : f32, %pi_over_4 : f32, %pi_over_2 : f32, %pi : f32, %pi_3_over_2 : f32, %vec_cos : vector<3xf32>) {
   // CHECK: 1
-  %0 = arith.constant 0.0 : f32
-  %cos_0 = math.cos %0 : f32
+  %cos_0 = math.cos %zero : f32
   vector.print %cos_0 : f32
 
   // CHECK: 0.707107
-  %pi_over_4 = arith.constant 0.78539816339 : f32
   %cos_pi_over_4 = math.cos %pi_over_4 : f32
   vector.print %cos_pi_over_4 : f32
 
   //// CHECK: 0
-  %pi_over_2 = arith.constant 1.57079632679 : f32
   %cos_pi_over_2 = math.cos %pi_over_2 : f32
   vector.print %cos_pi_over_2 : f32
 
   /// CHECK: -1
-  %pi = arith.constant 3.14159265359 : f32
   %cos_pi = math.cos %pi : f32
   vector.print %cos_pi : f32
 
   // CHECK: 0
-  %pi_3_over_2 = arith.constant 4.71238898038 : f32
   %cos_pi_3_over_2 = math.cos %pi_3_over_2 : f32
   vector.print %cos_pi_3_over_2 : f32
 
   // CHECK: -1, -0.5, 0
-  %vec_x = arith.constant dense<[9.42477796077, 2.09439510239, -1.57079632679]> : vector<3xf32>
-  %cos_vec_x = math.cos %vec_x : vector<3xf32>
+  %cos_vec_x = math.cos %vec_cos : vector<3xf32>
   vector.print %cos_vec_x : vector<3xf32>
-
 
   return
 }
@@ -386,22 +379,22 @@ func.func @cos() {
 // -------------------------------------------------------------------------- //
 
 func.func @atan() {
-  // CHECK: -0.785184
+  // CHECK: -0.785398
   %0 = arith.constant -1.0 : f32
   %atan_0 = math.atan %0 : f32
   vector.print %atan_0 : f32
 
-  // CHECK: 0.785184
+  // CHECK: 0.785398
   %1 = arith.constant 1.0 : f32
   %atan_1 = math.atan %1 : f32
   vector.print %atan_1 : f32
 
-  // CHECK: -0.463643
+  // CHECK: -0.463648
   %2 = arith.constant -0.5 : f32
   %atan_2 = math.atan %2 : f32
   vector.print %atan_2 : f32
 
-  // CHECK: 0.463643
+  // CHECK: 0.463648
   %3 = arith.constant 0.5 : f32
   %atan_3 = math.atan %3 : f32
   vector.print %atan_3 : f32
@@ -474,7 +467,7 @@ func.func @atan2() {
   %atan2_8 = math.atan2 %neg_two, %one : f32
   vector.print %atan2_8 : f32
 
-  // CHECK: 0.463643
+  // CHECK: 0.463648
   %atan2_9 = math.atan2 %one, %two : f32
   vector.print %atan2_9 : f32
 
@@ -490,7 +483,7 @@ func.func @atan2() {
   %atan2_11 = math.atan2 %neg_one, %neg_two : f32
   vector.print %atan2_11 : f32
 
-  // CHECK: -0.463643
+  // CHECK: -0.463648
   %atan2_12 = math.atan2 %neg_one, %two : f32
   vector.print %atan2_12 : f32
 
@@ -507,7 +500,13 @@ func.func @main() {
   call @exp(): () -> ()
   call @expm1(): () -> ()
   call @sin(): () -> ()
-  call @cos(): () -> ()
+  %zero = arith.constant 0.0 : f32
+  %pi_over_4 = arith.constant 0.78539816339 : f32
+  %pi_over_2 = arith.constant 1.57079632679 : f32
+  %pi = arith.constant 3.14159265359 : f32
+  %pi_3_over_2 = arith.constant 4.71238898038 : f32
+  %vec_cos = arith.constant dense<[9.42477796077, 2.09439510239, -1.57079632679]> : vector<3xf32>
+  call @cos(%zero, %pi_over_4, %pi_over_2, %pi, %pi_3_over_2, %vec_cos): (f32, f32, f32, f32, f32, vector<3xf32>) -> ()
   call @atan() : () -> ()
   call @atan2() : () -> ()
   return

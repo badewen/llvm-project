@@ -749,7 +749,7 @@ ProcessSDDbgValues(SDNode *N, SelectionDAG *DAG, InstrEmitter &Emitter,
   // source order number as N.
   MachineBasicBlock *BB = Emitter.getBlock();
   MachineBasicBlock::iterator InsertPos = Emitter.getInsertPos();
-  for (auto DV : DAG->GetDbgValues(N)) {
+  for (auto *DV : DAG->GetDbgValues(N)) {
     if (DV->isEmitted())
       continue;
     unsigned DVOrder = DV->getOrder();
@@ -889,6 +889,9 @@ EmitSchedule(MachineBasicBlock::iterator &InsertPos) {
     if (DAG->getNoMergeSiteInfo(Node)) {
       MI->setFlag(MachineInstr::MIFlag::NoMerge);
     }
+
+    if (MDNode *MD = DAG->getPCSections(Node))
+      MI->setPCSections(MF, MD);
 
     return MI;
   };

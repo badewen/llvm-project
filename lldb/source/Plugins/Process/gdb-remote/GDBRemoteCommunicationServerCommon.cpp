@@ -57,11 +57,9 @@ const static uint32_t g_default_packet_timeout_sec = 0; // not specified
 #endif
 
 // GDBRemoteCommunicationServerCommon constructor
-GDBRemoteCommunicationServerCommon::GDBRemoteCommunicationServerCommon(
-    const char *comm_name, const char *listener_name)
-    : GDBRemoteCommunicationServer(comm_name, listener_name),
-      m_process_launch_info(), m_process_launch_error(), m_proc_infos(),
-      m_proc_infos_index(0) {
+GDBRemoteCommunicationServerCommon::GDBRemoteCommunicationServerCommon()
+    : GDBRemoteCommunicationServer(), m_process_launch_info(),
+      m_process_launch_error(), m_proc_infos(), m_proc_infos_index(0) {
   RegisterMemberFunctionHandler(StringExtractorGDBRemote::eServerPacketType_A,
                                 &GDBRemoteCommunicationServerCommon::Handle_A);
   RegisterMemberFunctionHandler(
@@ -304,7 +302,7 @@ GDBRemoteCommunicationServerCommon::Handle_qHostInfo(
     response.PutChar(';');
   }
 #endif // #if defined(__APPLE__)
-
+  // coverity[unsigned_compare]
   if (g_default_packet_timeout_sec > 0)
     response.Printf("default_packet_timeout:%u;", g_default_packet_timeout_sec);
 
@@ -1138,7 +1136,8 @@ GDBRemoteCommunicationServerCommon::Handle_qModuleInfo(
   response.PutChar(';');
 
   response.PutCString("file_path:");
-  response.PutStringAsRawHex8(matched_module_spec.GetFileSpec().GetCString());
+  response.PutStringAsRawHex8(
+        matched_module_spec.GetFileSpec().GetPath().c_str());
   response.PutChar(';');
   response.PutCString("file_offset:");
   response.PutHex64(file_offset);
@@ -1213,7 +1212,7 @@ void GDBRemoteCommunicationServerCommon::CreateProcessInfoResponse(
       proc_info.GetUserID(), proc_info.GetGroupID(),
       proc_info.GetEffectiveUserID(), proc_info.GetEffectiveGroupID());
   response.PutCString("name:");
-  response.PutStringAsRawHex8(proc_info.GetExecutableFile().GetCString());
+  response.PutStringAsRawHex8(proc_info.GetExecutableFile().GetPath().c_str());
 
   response.PutChar(';');
   response.PutCString("args:");

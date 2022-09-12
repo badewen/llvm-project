@@ -7,6 +7,7 @@ set(LLVM_OPTIONAL_SOURCES
   CudaRuntimeWrappers.cpp
   SparseTensorUtils.cpp
   ExecutionEngine.cpp
+  Float16bits.cpp
   RocmRuntimeWrappers.cpp
   RunnerUtils.cpp
   OptUtils.cpp
@@ -38,8 +39,7 @@ add_mlir_library(MLIRExecutionEngineUtils
   Passes
   )
 
-# Only enable the ExecutionEngine if the native target is configured in.
-if(NOT TARGET ${LLVM_NATIVE_ARCH})
+if(NOT MLIR_ENABLE_EXECUTION_ENGINE)
   return()
 endif()
 
@@ -86,7 +86,7 @@ add_mlir_library(MLIRExecutionEngine
 
   LINK_LIBS PUBLIC
   MLIRExecutionEngineUtils
-  MLIRLLVMIR
+  MLIRLLVMDialect
   MLIRLLVMToLLVMIRTranslation
   MLIRTargetLLVMIRExport
   )
@@ -108,7 +108,7 @@ add_mlir_library(MLIRJitRunner
   LINK_LIBS PUBLIC
   ${dialect_libs}
   MLIRExecutionEngine
-  MLIRFunc
+  MLIRFuncDialect
   MLIRFuncToLLVM
   MLIRIR
   MLIRParser
@@ -121,11 +121,12 @@ add_mlir_library(MLIRJitRunner
 add_mlir_library(mlir_c_runner_utils
   SHARED
   CRunnerUtils.cpp
+  Float16bits.cpp
   SparseTensorUtils.cpp
 
   EXCLUDE_FROM_LIBMLIR
   )
-set_property(TARGET mlir_c_runner_utils PROPERTY CXX_STANDARD 11)
+set_property(TARGET mlir_c_runner_utils PROPERTY CXX_STANDARD 17)
 target_compile_definitions(mlir_c_runner_utils PRIVATE mlir_c_runner_utils_EXPORTS)
 
 add_mlir_library(mlir_runner_utils
