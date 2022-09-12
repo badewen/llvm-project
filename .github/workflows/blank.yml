@@ -48,7 +48,7 @@ jobs:
           cd build
           set CC=cl
           set CXX=cl
-          cmake -GNinja -DLLVM_ENABLE_PROJECTS="bolt;clang;clang-tools-extra;compiler-rt;cross-project-tests;libc;libclc;libcxx;libcxxabi;libunwind;lld;lldb" ..\llvm -DCMAKE_BUILD_TYPE=Release -DLLVM_DEFAULT_TARGET_TRIPLE="x86_64-unknown-none-elf" 
+          cmake -GNinja -DLLVM_ENABLE_PROJECTS="clang;libcxx" ..\llvm -DCMAKE_BUILD_TYPE=Release
           ninja  -w dupbuild=warn 
           cd ..
           
@@ -59,7 +59,7 @@ jobs:
         with:
           command: c
           files: |
-            ./build
+            ./build/bin
           outPath: build.tar.gz
       - name: upload-artifact
         uses: actions/upload-artifact@v3
