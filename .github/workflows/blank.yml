@@ -50,8 +50,8 @@ jobs:
           cd build
           set CC=cl
           set CXX=cl
-          cmake -GNinja -DLLVM_ENABLE_PROJECTS="clang" -DLLVM_ENABLE_RUNTIMES="libcxx;libcxxabi" ..\llvm -DCMAKE_BUILD_TYPE=Release
-          msbuild -m 
+          cmake -G"MinGW Makefiles"  -DLLVM_ENABLE_PROJECTS="clang" -DLLVM_ENABLE_RUNTIMES="libcxx;libcxxabi" ..\llvm -DCMAKE_BUILD_TYPE=Release
+          make -j 4
           cd ..
           
 
