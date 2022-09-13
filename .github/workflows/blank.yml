@@ -36,8 +36,8 @@ jobs:
         with:
          cmake-version: '3.23.2'
          
-      - name: setup ninja
-        uses: seanmiddleditch/gha-setup-ninja@master
+      #- name: setup ninja
+      #  uses: seanmiddleditch/gha-setup-ninja@master
        
       - name: dev-cmd
         uses: ilammy/msvc-dev-cmd@v1
@@ -51,7 +51,7 @@ jobs:
           set CC=cl
           set CXX=cl
           cmake -GNinja -DLLVM_ENABLE_PROJECTS="clang" -DLLVM_ENABLE_RUNTIMES="libcxx;libcxxabi" ..\llvm -DCMAKE_BUILD_TYPE=Release
-          ninja -w dupbuild=warn
+          msbuild -m 
           cd ..
           
 
