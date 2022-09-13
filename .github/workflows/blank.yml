@@ -50,8 +50,8 @@ jobs:
           cd build
           
           
-          cmake -G"MinGW Makefiles"  -DLLVM_ENABLE_PROJECTS="clang" -DLLVM_ENABLE_RUNTIMES="libcxx;libcxxabi" ..\llvm -DCMAKE_BUILD_TYPE=Release
-          make -j 4
+          cmake -DLLVM_ENABLE_PROJECTS="clang" -DLLVM_ENABLE_RUNTIMES="libcxx;libcxxabi" ..\llvm -DCMAKE_BUILD_TYPE=Release
+          msbuild
           cd ..
           
 
