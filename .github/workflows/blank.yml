@@ -51,7 +51,7 @@ jobs:
           
           
           cmake -DLLVM_ENABLE_PROJECTS="clang" -DLLVM_ENABLE_RUNTIMES="libcxx;libcxxabi" ..\llvm -DCMAKE_BUILD_TYPE=Release
-          msbuild LLVM.sln -m
+          msbuild LLVM.sln -m /p:Configuration=Release /p:Platform=x64
           cd ..
           
 
