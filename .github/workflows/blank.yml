@@ -48,7 +48,7 @@ jobs:
           cd build
           set CC=cl
           set CXX=cl
-          cmake -GNinja -DLLVM_ENABLE_PROJECTS="clang;libcxx" ..\llvm -DCMAKE_BUILD_TYPE=Release
+          cmake -GNinja -DLLVM_ENABLE_PROJECTS="clang" -DLLVM_ENABLE_RUNTIMES="libcxx;libcxxabi ..\llvm -DCMAKE_BUILD_TYPE=Release
           ninja  -w dupbuild=warn 
           cd ..
           
@@ -82,4 +82,4 @@ jobs:
         uses: actions/upload-artifact@v3
         with:
           name: full_build_output
-          path: .\full.tar.gz
+          path: .\full_build.tar.gz
