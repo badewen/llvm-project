@@ -39,17 +39,17 @@ jobs:
       #- name: setup ninja
       #  uses: seanmiddleditch/gha-setup-ninja@master
        
-      - name: dev-cmd
-        uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: amd64_x86
+      #- name: dev-cmd
+      #  uses: ilammy/msvc-dev-cmd@v1
+      #  with:
+      #    arch: amd64_x86
         
       - name : build
         run: |
           mkdir build
           cd build
-          set CC=cl
-          set CXX=cl
+          
+          
           cmake -G"MinGW Makefiles"  -DLLVM_ENABLE_PROJECTS="clang" -DLLVM_ENABLE_RUNTIMES="libcxx;libcxxabi" ..\llvm -DCMAKE_BUILD_TYPE=Release
           make -j 4
           cd ..
