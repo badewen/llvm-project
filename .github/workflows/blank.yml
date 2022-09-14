@@ -22,8 +22,8 @@ jobs:
 
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
-      - name: Download a Build Artifact
-        uses: actions/download-artifact@v3.0.0
+      #- name: Download a Build Artifact
+      #  uses: actions/download-artifact@v3.0.0
       
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
       - uses: actions/checkout@v3
