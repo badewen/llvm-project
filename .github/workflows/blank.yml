@@ -50,7 +50,7 @@ jobs:
           cd build
           set CC=cl    
           set CXX=cl
-          cmake -GNinja -DLLVM_ENABLE_PROJECTS="clang;lld;compiler-rt" -DLLVM_ENABLE_RUNTIMES="libcxx;libcxxabi;libunwind" -DLIBCXXABI_USE_LLVM_UNWINDER=YES -DCLANG_ENABLE_BOOTSTRAP -DCOMPILER_RT_STANDALONE_BUILD ..\llvm  -DCMAKE_BUILD_TYPE=Release
+          cmake -GNinja -DLLVM_ENABLE_PROJECTS="clang;lld;compiler-rt" -DLLVM_ENABLE_RUNTIMES="libcxx;libcxxabi;libunwind" -DLIBCXXABI_USE_LLVM_UNWINDER=YES -DCLANG_ENABLE_BOOTSTRAP=On -DCOMPILER_RT_STANDALONE_BUILD=On ..\llvm  -DCMAKE_BUILD_TYPE=Release
           ninja -w dupbuild=warn
           cd ..
           
