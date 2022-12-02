@@ -50,7 +50,7 @@ jobs:
           cd build
           set CC=cl    
           set CXX=cl
-          cmake -GNinja -DLLVM_ENABLE_PROJECTS="clang;clang-tools-extra;libc;lld;pstl" -DLLVM_ENABLE_RUNTIMES=all -DCLANG_ENABLE_BOOTSTRAP=On ..\llvm  -DCMAKE_BUILD_TYPE=Release
+          cmake -GNinja -DCMAKE_BUILD_TYPE=MinSizeRel -DCMAKE_INSTALL_PREFIX=../install -DLLVM_TARGETS_TO_BUILD=AArch64 -DLLVM_DEFAULT_TARGET_TRIPLE=aarch64-unknown-none-eabi -DCMAKE_CROSSCOMPILING=True -DLLVM_TARGET_ARCH=AArch64 -DCMAKE_CXX_FLAGS='-march=armv8.2-a -mtune=cortex-a77' 
           ninja -w dupbuild=warn
           cd ..
           
@@ -61,8 +61,8 @@ jobs:
         with:
           command: c
           files: |
-            ./build/bin
-          outPath: build.tar.gz
+            ./install
+          outPath: install.tar.gz
       
       - name: compress_
         uses: a7ul/tar-action@v1.1.0
@@ -77,7 +77,7 @@ jobs:
         uses: actions/upload-artifact@v3
         with:
           name: bin_only
-          path: .\build.tar.gz
+          path: .\install.tar.gz
         
         
       - name: upload-artifact_full
