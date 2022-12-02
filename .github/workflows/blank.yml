@@ -50,7 +50,7 @@ jobs:
           cd build
           set CC=cl    
           set CXX=cl
-          cmake -GNinja -DCMAKE_BUILD_TYPE=MinSizeRel -DCMAKE_INSTALL_PREFIX=../install -DLLVM_TARGETS_TO_BUILD=AArch64 -DLLVM_DEFAULT_TARGET_TRIPLE=aarch64-unknown-none-eabi -DCMAKE_CROSSCOMPILING=True -DLLVM_TARGET_ARCH=AArch64 -DCMAKE_CXX_FLAGS='-march=armv8.2-a -mtune=cortex-a77' 
+          cmake -GNinja -DCMAKE_BUILD_TYPE=MinSizeRel -DCMAKE_INSTALL_PREFIX=../install -DLLVM_TARGETS_TO_BUILD=AArch64 -DLLVM_DEFAULT_TARGET_TRIPLE=aarch64-unknown-none-eabi -DCMAKE_CROSSCOMPILING=True -DLLVM_TARGET_ARCH=AArch64 -DCMAKE_CXX_FLAGS='-march=armv8.2-a -mtune=cortex-a77' ../llvm
           ninja -w dupbuild=warn
           cd ..
           
