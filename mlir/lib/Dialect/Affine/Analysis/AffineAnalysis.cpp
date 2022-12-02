@@ -150,7 +150,7 @@ bool mlir::isLoopMemoryParallel(AffineForOp forOp) {
         loadAndStoreOps.push_back(op);
     } else if (!isa<AffineForOp, AffineYieldOp, AffineIfOp>(op) &&
                !hasSingleEffect<MemoryEffects::Allocate>(op) &&
-               !MemoryEffectOpInterface::hasNoEffect(op)) {
+               !isMemoryEffectFree(op)) {
       // Alloc-like ops inside `forOp` are fine (they don't impact parallelism)
       // as long as they don't escape the loop (which has been checked above).
       return WalkResult::interrupt();
@@ -430,10 +430,12 @@ static void computeDirectionVector(
   dependenceComponents->resize(numCommonLoops);
   for (unsigned j = 0; j < numCommonLoops; ++j) {
     (*dependenceComponents)[j].op = commonLoops[j].getOperation();
-    auto lbConst = dependenceDomain->getConstantBound(IntegerPolyhedron::LB, j);
+    auto lbConst =
+        dependenceDomain->getConstantBound64(IntegerPolyhedron::LB, j);
     (*dependenceComponents)[j].lb =
         lbConst.value_or(std::numeric_limits<int64_t>::min());
-    auto ubConst = dependenceDomain->getConstantBound(IntegerPolyhedron::UB, j);
+    auto ubConst =
+        dependenceDomain->getConstantBound64(IntegerPolyhedron::UB, j);
     (*dependenceComponents)[j].ub =
         ubConst.value_or(std::numeric_limits<int64_t>::max());
   }

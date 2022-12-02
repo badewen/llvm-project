@@ -121,6 +121,7 @@ void BinaryFunction::parseLSDA(ArrayRef<uint8_t> LSDASectionData,
                                              : *MaybeLPStart - Address;
 
   const uint8_t TTypeEncoding = Data.getU8(&Offset);
+  LSDATypeEncoding = TTypeEncoding;
   size_t TTypeEncodingSize = 0;
   uintptr_t TTypeEnd = 0;
   if (TTypeEncoding != DW_EH_PE_omit) {
@@ -405,7 +406,7 @@ void BinaryFunction::updateEHRanges() {
         const MCSymbol *EHSymbol;
         MCInst EHLabel;
         {
-          std::unique_lock<std::shared_timed_mutex> Lock(BC.CtxMutex);
+          std::unique_lock<llvm::sys::RWMutex> Lock(BC.CtxMutex);
           EHSymbol = BC.Ctx->createNamedTempSymbol("EH");
           BC.MIB->createEHLabel(EHLabel, EHSymbol, BC.Ctx.get());
         }

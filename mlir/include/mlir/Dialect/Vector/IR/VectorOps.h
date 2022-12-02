@@ -13,6 +13,8 @@
 #ifndef MLIR_DIALECT_VECTOR_IR_VECTOROPS_H
 #define MLIR_DIALECT_VECTOR_IR_VECTOROPS_H
 
+#include "mlir/Dialect/Vector/Interfaces/MaskableOpInterface.h"
+#include "mlir/Dialect/Vector/Interfaces/MaskingOpInterface.h"
 #include "mlir/IR/AffineMap.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/BuiltinTypes.h"
@@ -20,6 +22,7 @@
 #include "mlir/IR/OpDefinition.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Interfaces/ControlFlowInterfaces.h"
+#include "mlir/Interfaces/DestinationStyleOpInterface.h"
 #include "mlir/Interfaces/InferTypeOpInterface.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "mlir/Interfaces/VectorInterfaces.h"
@@ -48,6 +51,10 @@ class VectorDialect;
 namespace detail {
 struct BitmaskEnumStorage;
 } // namespace detail
+
+/// Default callback to build a region with a 'vector.yield' terminator with no
+/// arguments.
+void buildTerminatedBody(OpBuilder &builder, Location loc);
 
 /// Return whether `srcType` can be broadcast to `dstVectorType` under the
 /// semantics of the `vector.broadcast` op.
@@ -119,11 +126,6 @@ void populateVectorMaskMaterializationPatterns(RewritePatternSet &patterns,
                                                bool force32BitVectorIndices,
                                                PatternBenefit benefit = 1);
 
-/// Collect a set of patterns to propagate insert_map/extract_map in the ssa
-/// chain.
-void populatePropagateVectorDistributionPatterns(RewritePatternSet &patterns,
-                                                 PatternBenefit benefit = 1);
-
 /// Collects patterns to progressively lower vector.broadcast ops on high-D
 /// vectors to low-D vector ops.
 void populateVectorBroadcastLoweringPatterns(RewritePatternSet &patterns,
@@ -185,6 +187,17 @@ bool isDisjointTransferSet(VectorTransferOpInterface transferA,
 /// corresponding arith operation.
 Value makeArithReduction(OpBuilder &b, Location loc, CombiningKind kind,
                          Value v1, Value v2);
+
+/// Returns true if `attr` has "parallel" iterator type semantics.
+inline bool isParallelIterator(Attribute attr) {
+  return attr.cast<IteratorTypeAttr>().getValue() == IteratorType::parallel;
+}
+
+/// Returns true if `attr` has "reduction" iterator type semantics.
+inline bool isReductionIterator(Attribute attr) {
+  return attr.cast<IteratorTypeAttr>().getValue() == IteratorType::reduction;
+}
+
 } // namespace vector
 } // namespace mlir
 

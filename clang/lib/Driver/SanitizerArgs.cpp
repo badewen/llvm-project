@@ -53,7 +53,7 @@ static const SanitizerMask SupportsCoverage =
     SanitizerKind::DataFlow | SanitizerKind::Fuzzer |
     SanitizerKind::FuzzerNoLink | SanitizerKind::FloatDivideByZero |
     SanitizerKind::SafeStack | SanitizerKind::ShadowCallStack |
-    SanitizerKind::Thread | SanitizerKind::ObjCCast;
+    SanitizerKind::Thread | SanitizerKind::ObjCCast | SanitizerKind::KCFI;
 static const SanitizerMask RecoverableByDefault =
     SanitizerKind::Undefined | SanitizerKind::Integer |
     SanitizerKind::ImplicitConversion | SanitizerKind::Nullability |
@@ -98,6 +98,7 @@ enum CoverageFeature {
   CoverageInlineBoolFlag = 1 << 15,
   CoverageTraceLoads = 1 << 16,
   CoverageTraceStores = 1 << 17,
+  CoverageControlFlow = 1 << 18,
 };
 
 enum BinaryMetadataFeature {
@@ -248,7 +249,7 @@ static SanitizerMask parseSanitizeTrapArgs(const Driver &D,
         SanitizerSet S;
         S.Mask = InvalidValues;
         D.Diag(diag::err_drv_unsupported_option_argument)
-            << Arg->getOption().getName() << toString(S);
+            << Arg->getSpelling() << toString(S);
       }
       TrappingKinds |= expandSanitizerGroups(Add) & ~TrapRemove;
     } else if (Arg->getOption().matches(options::OPT_fno_sanitize_trap_EQ)) {
@@ -603,7 +604,7 @@ SanitizerArgs::SanitizerArgs(const ToolChain &TC,
         SetToDiagnose.Mask |= KindsToDiagnose;
         if (DiagnoseErrors)
           D.Diag(diag::err_drv_unsupported_option_argument)
-              << Arg->getOption().getName() << toString(SetToDiagnose);
+              << Arg->getSpelling() << toString(SetToDiagnose);
         DiagnosedUnrecoverableKinds |= KindsToDiagnose;
       }
       RecoverableKinds |= expandSanitizerGroups(Add);
@@ -618,7 +619,7 @@ SanitizerArgs::SanitizerArgs(const ToolChain &TC,
         SetToDiagnose.Mask |= KindsToDiagnose;
         if (DiagnoseErrors)
           D.Diag(diag::err_drv_unsupported_option_argument)
-              << Arg->getOption().getName() << toString(SetToDiagnose);
+              << Arg->getSpelling() << toString(SetToDiagnose);
         DiagnosedAlwaysRecoverableKinds |= KindsToDiagnose;
       }
       RecoverableKinds &= ~expandSanitizerGroups(Remove);
@@ -808,19 +809,21 @@ SanitizerArgs::SanitizerArgs(const ToolChain &TC,
   int InsertionPointTypes = CoverageFunc | CoverageBB | CoverageEdge;
   int InstrumentationTypes = CoverageTracePC | CoverageTracePCGuard |
                              CoverageInline8bitCounters | CoverageTraceLoads |
-                             CoverageTraceStores | CoverageInlineBoolFlag;
+                             CoverageTraceStores | CoverageInlineBoolFlag |
+                             CoverageControlFlow;
   if ((CoverageFeatures & InsertionPointTypes) &&
       !(CoverageFeatures & InstrumentationTypes) && DiagnoseErrors) {
     D.Diag(clang::diag::warn_drv_deprecated_arg)
         << "-fsanitize-coverage=[func|bb|edge]"
-        << "-fsanitize-coverage=[func|bb|edge],[trace-pc-guard|trace-pc]";
+        << "-fsanitize-coverage=[func|bb|edge],[trace-pc-guard|trace-pc],["
+           "control-flow]";
   }
 
   // trace-pc w/o func/bb/edge implies edge.
   if (!(CoverageFeatures & InsertionPointTypes)) {
     if (CoverageFeatures &
         (CoverageTracePC | CoverageTracePCGuard | CoverageInline8bitCounters |
-         CoverageInlineBoolFlag))
+         CoverageInlineBoolFlag | CoverageControlFlow))
       CoverageFeatures |= CoverageEdge;
 
     if (CoverageFeatures & CoverageStackDepth)
@@ -920,10 +923,14 @@ SanitizerArgs::SanitizerArgs(const ToolChain &TC,
         !TC.getTriple().isOSBinFormatELF() || TC.getTriple().isOSFuchsia() ||
             TC.getTriple().isPS());
 
+    // Enable ODR indicators which allow better handling of mixed instrumented
+    // and uninstrumented globals. Disable them for Windows where weak odr
+    // indicators (.weak.__odr_asan_gen*) may cause multiple definition linker
+    // errors in the absence of -lldmingw.
     AsanUseOdrIndicator =
         Args.hasFlag(options::OPT_fsanitize_address_use_odr_indicator,
                      options::OPT_fno_sanitize_address_use_odr_indicator,
-                     AsanUseOdrIndicator);
+                     !TC.getTriple().isOSWindows());
 
     if (AllAddedKinds & SanitizerKind::PointerCompare & ~AllRemove) {
       AsanInvalidPointerCmp = true;
@@ -944,7 +951,7 @@ SanitizerArgs::SanitizerArgs(const ToolChain &TC,
       auto parsedAsanDtorKind = AsanDtorKindFromString(Arg->getValue());
       if (parsedAsanDtorKind == llvm::AsanDtorKind::Invalid && DiagnoseErrors) {
         TC.getDriver().Diag(clang::diag::err_drv_unsupported_option_argument)
-            << Arg->getOption().getName() << Arg->getValue();
+            << Arg->getSpelling() << Arg->getValue();
       }
       AsanDtorKind = parsedAsanDtorKind;
     }
@@ -957,7 +964,7 @@ SanitizerArgs::SanitizerArgs(const ToolChain &TC,
               llvm::AsanDetectStackUseAfterReturnMode::Invalid &&
           DiagnoseErrors) {
         TC.getDriver().Diag(clang::diag::err_drv_unsupported_option_argument)
-            << Arg->getOption().getName() << Arg->getValue();
+            << Arg->getSpelling() << Arg->getValue();
       }
       AsanUseAfterReturn = parsedAsanUseAfterReturn;
     }
@@ -1111,7 +1118,8 @@ void SanitizerArgs::addArgs(const ToolChain &TC, const llvm::opt::ArgList &Args,
       std::make_pair(CoverageNoPrune, "-fsanitize-coverage-no-prune"),
       std::make_pair(CoverageStackDepth, "-fsanitize-coverage-stack-depth"),
       std::make_pair(CoverageTraceLoads, "-fsanitize-coverage-trace-loads"),
-      std::make_pair(CoverageTraceStores, "-fsanitize-coverage-trace-stores")};
+      std::make_pair(CoverageTraceStores, "-fsanitize-coverage-trace-stores"),
+      std::make_pair(CoverageControlFlow, "-fsanitize-coverage-control-flow")};
   for (auto F : CoverageFlags) {
     if (CoverageFeatures & F.first)
       CmdArgs.push_back(F.second);
@@ -1180,8 +1188,8 @@ void SanitizerArgs::addArgs(const ToolChain &TC, const llvm::opt::ArgList &Args,
   if (MsanUseAfterDtor)
     CmdArgs.push_back("-fsanitize-memory-use-after-dtor");
 
-  if (MsanParamRetval)
-    CmdArgs.push_back("-fsanitize-memory-param-retval");
+  if (!MsanParamRetval)
+    CmdArgs.push_back("-fno-sanitize-memory-param-retval");
 
   // FIXME: Pass these parameters as function attributes, not as -llvm flags.
   if (!TsanMemoryAccess) {
@@ -1232,8 +1240,8 @@ void SanitizerArgs::addArgs(const ToolChain &TC, const llvm::opt::ArgList &Args,
   if (AsanGlobalsDeadStripping)
     CmdArgs.push_back("-fsanitize-address-globals-dead-stripping");
 
-  if (AsanUseOdrIndicator)
-    CmdArgs.push_back("-fsanitize-address-use-odr-indicator");
+  if (!AsanUseOdrIndicator)
+    CmdArgs.push_back("-fno-sanitize-address-use-odr-indicator");
 
   if (AsanInvalidPointerCmp) {
     CmdArgs.push_back("-mllvm");
@@ -1338,7 +1346,7 @@ SanitizerMask parseArgValues(const Driver &D, const llvm::opt::Arg *A,
       Kinds |= Kind;
     else if (DiagnoseErrors)
       D.Diag(clang::diag::err_drv_unsupported_option_argument)
-          << A->getOption().getName() << Value;
+          << A->getSpelling() << Value;
   }
   return Kinds;
 }
@@ -1369,10 +1377,11 @@ int parseCoverageFeatures(const Driver &D, const llvm::opt::Arg *A,
                 .Case("stack-depth", CoverageStackDepth)
                 .Case("trace-loads", CoverageTraceLoads)
                 .Case("trace-stores", CoverageTraceStores)
+                .Case("control-flow", CoverageControlFlow)
                 .Default(0);
     if (F == 0 && DiagnoseErrors)
       D.Diag(clang::diag::err_drv_unsupported_option_argument)
-          << A->getOption().getName() << Value;
+          << A->getSpelling() << Value;
     Features |= F;
   }
   return Features;
@@ -1394,7 +1403,7 @@ int parseBinaryMetadataFeatures(const Driver &D, const llvm::opt::Arg *A,
                 .Default(0);
     if (F == 0 && DiagnoseErrors)
       D.Diag(clang::diag::err_drv_unsupported_option_argument)
-          << A->getOption().getName() << Value;
+          << A->getSpelling() << Value;
     Features |= F;
   }
   return Features;

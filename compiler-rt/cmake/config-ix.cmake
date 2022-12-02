@@ -143,13 +143,15 @@ check_cxx_compiler_flag(-Werror -Wshadow COMPILER_RT_HAS_SHADOW_FLAG)
 check_cxx_compiler_flag(-Werror -Wempty-body COMPILER_RT_HAS_EMPTY_BODY_FLAG)
 check_cxx_compiler_flag(-Werror -Wsizeof-pointer-memaccess COMPILER_RT_HAS_SIZEOF_POINTER_MEMACCESS_FLAG)
 check_cxx_compiler_flag(-Werror -Wsizeof-array-argument COMPILER_RT_HAS_SIZEOF_ARRAY_ARGUMENT_FLAG)
-check_cxx_compiler_flag(-Werror -Wmemset-transposed-args COMPILER_RT_HAS_MEMSET_TRANSPOSED_ARGS_FLAG)
+check_cxx_compiler_flag(-Werror -Wsuspicious-memaccess COMPILER_RT_HAS_SUSPICIOUS_MEMACCESS_FLAG)
 check_cxx_compiler_flag(-Werror -Wbuiltin-memcpy-chk-size COMPILER_RT_HAS_BUILTIN_MEMCPY_CHK_SIZE_FLAG)
 check_cxx_compiler_flag(-Werror -Warray-bounds-pointer-arithmetic COMPILER_RT_HAS_ARRAY_BOUNDS_POINTER_ARITHMETIC_FLAG)
 check_cxx_compiler_flag(-Werror -Wreturn-stack-address COMPILER_RT_HAS_RETURN_STACK_ADDRESS_FLAG)
 check_cxx_compiler_flag(-Werror -Wsizeof-array-decay COMPILER_RT_HAS_SIZEOF_ARRAY_DECAY_FLAG)
 check_cxx_compiler_flag(-Werror -Wformat-insufficient-args COMPILER_RT_HAS_FORMAT_INSUFFICIENT_ARGS_FLAG)
 check_cxx_compiler_flag(-Werror -Wformat-security COMPILER_RT_HAS_BUILTIN_FORMAL_SECURITY_FLAG)
+check_cxx_compiler_flag(-Werror -Wsizeof-array-div COMPILER_RT_HAS_SIZEOF_ARRAY_DIV_FLAG)
+check_cxx_compiler_flag(-Werror -Wsizeof-pointer-div COMPILER_RT_HAS_SIZEOF_POINTER_DIV_FLAG)
 
 # Symbols.
 check_symbol_exists(__func__ "" COMPILER_RT_HAS_FUNC_SYMBOL)
@@ -222,7 +224,7 @@ set(COMPILER_RT_SUPPORTED_ARCH)
 # runtime libraries supported by our current compilers cross-compiling
 # abilities.
 set(SIMPLE_SOURCE ${CMAKE_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/simple.cc)
-file(WRITE ${SIMPLE_SOURCE} "#include <stdlib.h>\n#include <stdio.h>\nint main() { printf(\"hello, world\"); }\n")
+file(WRITE ${SIMPLE_SOURCE} "#include <stdlib.h>\n#include <stdio.h>\nint main(void) { printf(\"hello, world\"); }\n")
 
 # Detect whether the current target platform is 32-bit or 64-bit, and setup
 # the correct commandline flags needed to attempt to target 32-bit and 64-bit.
@@ -691,8 +693,8 @@ else()
   set(CAN_SYMBOLIZE 1)
 endif()
 
-find_program(GNU_LD_EXECUTABLE NAMES ${LLVM_DEFAULT_TARGET_TRIPLE}-ld.bfd ld.bfd DOC "GNU ld")
-find_program(GOLD_EXECUTABLE NAMES ${LLVM_DEFAULT_TARGET_TRIPLE}-ld.gold ld.gold DOC "GNU gold")
+find_program(GNU_LD_EXECUTABLE NAMES ${LLVM_TARGET_TRIPLE}-ld.bfd ld.bfd DOC "GNU ld")
+find_program(GOLD_EXECUTABLE NAMES ${LLVM_TARGET_TRIPLE}-ld.gold ld.gold DOC "GNU gold")
 
 if(COMPILER_RT_SUPPORTED_ARCH)
   list(REMOVE_DUPLICATES COMPILER_RT_SUPPORTED_ARCH)

@@ -69,7 +69,7 @@ llvm::Optional<std::string> tryParseProfile(StringRef Profile) {
   SmallVector<StringRef, 3> Parts;
   Profile.split(Parts, "_");
   if (Parts.size() != 3)
-    return NoneType();
+    return None;
 
   Triple::EnvironmentType Kind =
       StringSwitch<Triple::EnvironmentType>(Parts[0])
@@ -84,17 +84,17 @@ llvm::Optional<std::string> tryParseProfile(StringRef Profile) {
           .Case("as", Triple::EnvironmentType::Amplification)
           .Default(Triple::EnvironmentType::UnknownEnvironment);
   if (Kind == Triple::EnvironmentType::UnknownEnvironment)
-    return NoneType();
+    return None;
 
   unsigned long long Major = 0;
   if (llvm::getAsUnsignedInteger(Parts[1], 0, Major))
-    return NoneType();
+    return None;
 
   unsigned long long Minor = 0;
   if (Parts[2] == "x" && Kind == Triple::EnvironmentType::Library)
     Minor = OfflineLibMinor;
   else if (llvm::getAsUnsignedInteger(Parts[2], 0, Minor))
-    return NoneType();
+    return None;
 
   // dxil-unknown-shadermodel-hull
   llvm::Triple T;
@@ -105,7 +105,7 @@ llvm::Optional<std::string> tryParseProfile(StringRef Profile) {
   if (isLegalShaderModel(T))
     return T.getTriple();
   else
-    return NoneType();
+    return None;
 }
 
 bool isLegalValidatorVersion(StringRef ValVersionStr, const Driver &D) {
@@ -164,6 +164,18 @@ HLSLToolChain::TranslateArgs(const DerivedArgList &Args, StringRef BoundArch,
       A->claim();
       continue;
     }
+    if (A->getOption().getID() == options::OPT__SLASH_O) {
+      StringRef OStr = A->getValue();
+      if (OStr == "d") {
+        DAL->AddFlagArg(nullptr, Opts.getOption(options::OPT_O0));
+        A->claim();
+        continue;
+      } else {
+        DAL->AddJoinedArg(nullptr, Opts.getOption(options::OPT_O), OStr);
+        A->claim();
+        continue;
+      }
+    }
     if (A->getOption().getID() == options::OPT_emit_pristine_llvm) {
       // Translate fcgl into -S -emit-llvm and -disable-llvm-passes.
       DAL->AddFlagArg(nullptr, Opts.getOption(options::OPT_S));
@@ -192,7 +204,11 @@ HLSLToolChain::TranslateArgs(const DerivedArgList &Args, StringRef BoundArch,
                         Opts.getOption(options::OPT_dxil_validator_version),
                         DefaultValidatorVer);
   }
+  if (!DAL->hasArg(options::OPT_O_Group)) {
+    DAL->AddJoinedArg(nullptr, Opts.getOption(options::OPT_O), "3");
+  }
   // FIXME: add validation for enable_16bit_types should be after HLSL 2018 and
   // shader model 6.2.
+  // See: https://github.com/llvm/llvm-project/issues/57876
   return DAL;
 }

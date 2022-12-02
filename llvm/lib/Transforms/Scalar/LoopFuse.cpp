@@ -67,6 +67,7 @@
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/CodeMoverUtils.h"
 #include "llvm/Transforms/Utils/LoopPeel.h"
+#include "llvm/Transforms/Utils/LoopSimplify.h"
 
 using namespace llvm;
 
@@ -1696,6 +1697,7 @@ private:
     // mergeLatch may remove the only block in FC1.
     SE.forgetLoop(FC1.L);
     SE.forgetLoop(FC0.L);
+    SE.forgetLoopDispositions();
 
     // Move instructions from FC0.Latch to FC1.Latch.
     // Note: mergeLatch requires an updated DT.
@@ -1988,6 +1990,7 @@ private:
     // mergeLatch may remove the only block in FC1.
     SE.forgetLoop(FC1.L);
     SE.forgetLoop(FC0.L);
+    SE.forgetLoopDispositions();
 
     // Move instructions from FC0.Latch to FC1.Latch.
     // Note: mergeLatch requires an updated DT.
@@ -2083,8 +2086,19 @@ PreservedAnalyses LoopFusePass::run(Function &F, FunctionAnalysisManager &AM) {
   const TargetTransformInfo &TTI = AM.getResult<TargetIRAnalysis>(F);
   const DataLayout &DL = F.getParent()->getDataLayout();
 
+  // Ensure loops are in simplifed form which is a pre-requisite for loop fusion
+  // pass. Added only for new PM since the legacy PM has already added
+  // LoopSimplify pass as a dependency.
+  bool Changed = false;
+  for (auto &L : LI) {
+    Changed |=
+        simplifyLoop(L, &DT, &LI, &SE, &AC, nullptr, false /* PreserveLCSSA */);
+  }
+  if (Changed)
+    PDT.recalculate(F);
+
   LoopFuser LF(LI, DT, DI, SE, PDT, ORE, DL, AC, TTI);
-  bool Changed = LF.fuseLoops(F);
+  Changed |= LF.fuseLoops(F);
   if (!Changed)
     return PreservedAnalyses::all();
 

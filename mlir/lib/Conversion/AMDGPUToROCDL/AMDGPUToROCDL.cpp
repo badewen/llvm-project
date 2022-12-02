@@ -125,7 +125,6 @@ struct RawBufferOpLowering : public ConvertOpToLLVMPattern<GpuOp> {
     Type llvm4xI32 = this->typeConverter->convertType(VectorType::get(4, i32));
     MemRefDescriptor memrefDescriptor(memref);
     Type llvmI64 = this->typeConverter->convertType(rewriter.getI64Type());
-    Type llvm2xI32 = this->typeConverter->convertType(VectorType::get(2, i32));
     Value c32I64 = rewriter.create<LLVM::ConstantOp>(
         loc, llvmI64, rewriter.getI64IntegerAttr(32));
 
@@ -204,7 +203,7 @@ struct RawBufferOpLowering : public ConvertOpToLLVMPattern<GpuOp> {
       size_t i = pair.index();
       Value index = pair.value();
       Value strideOp;
-      if (ShapedType::isDynamicStrideOrOffset(strides[i])) {
+      if (ShapedType::isDynamic(strides[i])) {
         strideOp = rewriter.create<LLVM::MulOp>(
             loc, memrefDescriptor.stride(rewriter, loc, i), byteWidthConst);
       } else {
@@ -227,7 +226,7 @@ struct RawBufferOpLowering : public ConvertOpToLLVMPattern<GpuOp> {
     Value sgprOffset = adaptor.getSgprOffset();
     if (!sgprOffset)
       sgprOffset = createI32Constant(rewriter, loc, 0);
-    if (ShapedType::isDynamicStrideOrOffset(offset))
+    if (ShapedType::isDynamic(offset))
       sgprOffset = rewriter.create<LLVM::AddOp>(
           loc, memrefDescriptor.offset(rewriter, loc), sgprOffset);
     else if (offset > 0)

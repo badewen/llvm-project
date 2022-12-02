@@ -46,16 +46,19 @@ class RISCVTTIImpl : public BasicTTIImplBase<RISCVTTIImpl> {
   /// the true cost significantly if getVScaleForTuning is wildly off for the
   /// actual target hardware.
   unsigned getEstimatedVLFor(VectorType *Ty);
+
+  /// Return the cost of LMUL. The larger the LMUL, the higher the cost.
+  InstructionCost getLMULCost(MVT VT);
+
 public:
   explicit RISCVTTIImpl(const RISCVTargetMachine *TM, const Function &F)
       : BaseT(TM, F.getParent()->getDataLayout()), ST(TM->getSubtargetImpl(F)),
         TLI(ST->getTargetLowering()) {}
 
-  /// Return the cost of materializing a vector immediate, assuming it does
-  /// not get folded into the using instruction(s).
-  InstructionCost getVectorImmCost(VectorType *VecTy,
-                                   TTI::OperandValueInfo OpInfo,
-                                   TTI::TargetCostKind CostKind);
+  /// Return the cost of materializing an immediate for a value operand of
+  /// a store instruction.
+  InstructionCost getStoreImmCost(Type *VecTy, TTI::OperandValueInfo OpInfo,
+                                  TTI::TargetCostKind CostKind);
 
   InstructionCost getIntImmCost(const APInt &Imm, Type *Ty,
                                 TTI::TargetCostKind CostKind);
@@ -84,6 +87,13 @@ public:
   unsigned getRegUsageForType(Type *Ty);
 
   unsigned getMaximumVF(unsigned ElemWidth, unsigned Opcode) const;
+
+  bool preferEpilogueVectorization() const {
+    // Epilogue vectorization is usually unprofitable - tail folding or
+    // a smaller VF would have been better.  This a blunt hammer - we
+    // should re-examine this once vectorization is better tuned.
+    return false;
+  }
 
   InstructionCost getMaskedMemoryOpCost(unsigned Opcode, Type *Src,
                                         Align Alignment, unsigned AddressSpace,
@@ -144,6 +154,17 @@ public:
                                      CmpInst::Predicate VecPred,
                                      TTI::TargetCostKind CostKind,
                                      const Instruction *I = nullptr);
+
+  using BaseT::getVectorInstrCost;
+  InstructionCost getVectorInstrCost(unsigned Opcode, Type *Val,
+                                     unsigned Index);
+
+  InstructionCost getArithmeticInstrCost(
+      unsigned Opcode, Type *Ty, TTI::TargetCostKind CostKind,
+      TTI::OperandValueInfo Op1Info = {TTI::OK_AnyValue, TTI::OP_None},
+      TTI::OperandValueInfo Op2Info = {TTI::OK_AnyValue, TTI::OP_None},
+      ArrayRef<const Value *> Args = ArrayRef<const Value *>(),
+      const Instruction *CxtI = nullptr);
 
   bool isElementTypeLegalForScalableVector(Type *Ty) const {
     return TLI->isLegalElementTypeForRVV(Ty);
@@ -244,6 +265,8 @@ public:
     case RecurKind::UMax:
     case RecurKind::FMin:
     case RecurKind::FMax:
+    case RecurKind::SelectICmp:
+    case RecurKind::SelectFCmp:
     case RecurKind::FMulAdd:
       return true;
     default:

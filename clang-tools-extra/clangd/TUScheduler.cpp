@@ -245,7 +245,7 @@ private:
 /// threads, remove()s mostly from the main thread, and get() from ASTWorker.
 /// Writes are rare and reads are cheap, so we don't expect much contention.
 class TUScheduler::HeaderIncluderCache {
-  // We should be be a little careful how we store the include graph of open
+  // We should be a little careful how we store the include graph of open
   // files, as each can have a large number of transitive headers.
   // This representation is O(unique transitive source files).
   llvm::BumpPtrAllocator Arena;
@@ -395,11 +395,9 @@ public:
     // If there is no throttler, this dummy request is always satisfied.
     if (!Throttler)
       return;
-    Tracer.emplace("PreambleThrottled");
     ID = Throttler->acquire(Filename, [&] {
       Satisfied.store(true, std::memory_order_release);
       CV.notify_all();
-      Tracer.reset();
     });
   }
 
@@ -414,7 +412,6 @@ public:
   }
 
 private:
-  llvm::Optional<trace::Span> Tracer;
   PreambleThrottler::RequestID ID;
   PreambleThrottler *Throttler;
   std::atomic<bool> Satisfied = {false};
@@ -1656,10 +1653,9 @@ bool TUScheduler::update(PathRef File, ParseInputs Inputs,
   bool ContentChanged = false;
   if (!FD) {
     // Create a new worker to process the AST-related tasks.
-    ASTWorkerHandle Worker =
-        ASTWorker::create(File, CDB, *IdleASTs, *HeaderIncluders,
-                          WorkerThreads ? WorkerThreads.getPointer() : nullptr,
-                          Barrier, Opts, *Callbacks);
+    ASTWorkerHandle Worker = ASTWorker::create(
+        File, CDB, *IdleASTs, *HeaderIncluders,
+        WorkerThreads ? &*WorkerThreads : nullptr, Barrier, Opts, *Callbacks);
     FD = std::unique_ptr<FileData>(
         new FileData{Inputs.Contents, std::move(Worker)});
     ContentChanged = true;

@@ -558,7 +558,8 @@ public:
     return Type::getInt8PtrTy(Context, AddrSpace);
   }
 
-  /// Fetch the type representing a pointer to an integer value.
+  /// Fetch the type of an integer with size at least as big as that of a
+  /// pointer in the given address space.
   IntegerType *getIntPtrTy(const DataLayout &DL, unsigned AddrSpace = 0) {
     return DL.getIntPtrType(Context, AddrSpace);
   }
@@ -780,6 +781,15 @@ public:
   /// Create a call to Masked Scatter intrinsic
   CallInst *CreateMaskedScatter(Value *Val, Value *Ptrs, Align Alignment,
                                 Value *Mask = nullptr);
+
+  /// Create a call to Masked Expand Load intrinsic
+  CallInst *CreateMaskedExpandLoad(Type *Ty, Value *Ptr, Value *Mask = nullptr,
+                                   Value *PassThru = nullptr,
+                                   const Twine &Name = "");
+
+  /// Create a call to Masked Compress Store intrinsic
+  CallInst *CreateMaskedCompressStore(Value *Val, Value *Ptr,
+                                      Value *Mask = nullptr);
 
   /// Create an assume intrinsic call that allows the optimizer to
   /// assume that the provided condition will be true.
@@ -2572,6 +2582,22 @@ public:
 
   InserterTy &getInserter() { return Inserter; }
 };
+
+template <typename FolderTy, typename InserterTy>
+IRBuilder(LLVMContext &, FolderTy, InserterTy, MDNode *,
+          ArrayRef<OperandBundleDef>) -> IRBuilder<FolderTy, InserterTy>;
+IRBuilder(LLVMContext &, MDNode *, ArrayRef<OperandBundleDef>) -> IRBuilder<>;
+template <typename FolderTy>
+IRBuilder(BasicBlock *, FolderTy, MDNode *, ArrayRef<OperandBundleDef>)
+    -> IRBuilder<FolderTy>;
+IRBuilder(BasicBlock *, MDNode *, ArrayRef<OperandBundleDef>) -> IRBuilder<>;
+IRBuilder(Instruction *, MDNode *, ArrayRef<OperandBundleDef>) -> IRBuilder<>;
+template <typename FolderTy>
+IRBuilder(BasicBlock *, BasicBlock::iterator, FolderTy, MDNode *,
+          ArrayRef<OperandBundleDef>) -> IRBuilder<FolderTy>;
+IRBuilder(BasicBlock *, BasicBlock::iterator, MDNode *,
+          ArrayRef<OperandBundleDef>) -> IRBuilder<>;
+
 
 // Create wrappers for C Binding types (see CBindingWrapping.h).
 DEFINE_SIMPLE_CONVERSION_FUNCTIONS(IRBuilder<>, LLVMBuilderRef)

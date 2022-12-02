@@ -108,6 +108,8 @@ public:
 
   unsigned getAssumedAddrSpace(const Value *V) const { return -1; }
 
+  bool isSingleThreaded() const { return false; }
+
   std::pair<const Value *, unsigned>
   getPredicatedAddrSpace(const Value *V) const {
     return std::make_pair(nullptr, -1);
@@ -291,10 +293,6 @@ public:
 
   bool hasDivRemOp(Type *DataType, bool IsSigned) const { return false; }
 
-  unsigned maxLegalDivRemBitWidth() const {
-    return llvm::IntegerType::MAX_INT_BITS;
-  }
-
   bool hasVolatileVariant(Instruction *I, unsigned AddrSpace) const {
     return false;
   }
@@ -368,7 +366,7 @@ public:
 
   bool allowsMisalignedMemoryAccesses(LLVMContext &Context, unsigned BitWidth,
                                       unsigned AddressSpace, Align Alignment,
-                                      bool *Fast) const {
+                                      unsigned *Fast) const {
     return false;
   }
 
@@ -461,7 +459,7 @@ public:
     case TargetTransformInfo::CacheLevel::L1D:
       [[fallthrough]];
     case TargetTransformInfo::CacheLevel::L2D:
-      return llvm::Optional<unsigned>();
+      return llvm::None;
     }
     llvm_unreachable("Unknown TargetTransformInfo::CacheLevel");
   }
@@ -472,7 +470,7 @@ public:
     case TargetTransformInfo::CacheLevel::L1D:
       [[fallthrough]];
     case TargetTransformInfo::CacheLevel::L2D:
-      return llvm::Optional<unsigned>();
+      return llvm::None;
     }
 
     llvm_unreachable("Unknown TargetTransformInfo::CacheLevel");
@@ -828,6 +826,10 @@ public:
   bool preferPredicatedReductionSelect(unsigned Opcode, Type *Ty,
                                        TTI::ReductionFlags Flags) const {
     return false;
+  }
+
+  bool preferEpilogueVectorization() const {
+    return true;
   }
 
   bool shouldExpandReduction(const IntrinsicInst *II) const { return true; }

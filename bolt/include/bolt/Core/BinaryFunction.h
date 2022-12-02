@@ -45,6 +45,7 @@
 #include "llvm/MC/MCInst.h"
 #include "llvm/MC/MCSymbol.h"
 #include "llvm/Object/ObjectFile.h"
+#include "llvm/Support/RWMutex.h"
 #include "llvm/Support/raw_ostream.h"
 #include <algorithm>
 #include <iterator>
@@ -387,6 +388,9 @@ private:
 
   /// Original LSDA address for the function.
   uint64_t LSDAAddress{0};
+
+  /// Original LSDA type encoding
+  unsigned LSDATypeEncoding{dwarf::DW_EH_PE_omit};
 
   /// Containing compilation unit for the function.
   DWARFUnit *DwarfUnit{nullptr};
@@ -976,7 +980,7 @@ public:
       if (Callback(StringRef(Name)))
         return StringRef(Name);
 
-    return NoneType();
+    return None;
   }
 
   /// Check if (possibly one out of many) function name matches the given
@@ -1071,6 +1075,14 @@ public:
     return N;
   }
 
+  /// Return true if function has instructions to emit.
+  bool hasNonPseudoInstructions() const {
+    for (const BinaryBasicBlock &BB : blocks())
+      if (BB.getNumNonPseudos() > 0)
+        return true;
+    return false;
+  }
+
   /// Return MC symbol associated with the function.
   /// All references to the function should use this symbol.
   MCSymbol *getSymbol(const FragmentNum Fragment = FragmentNum::main()) {
@@ -1155,7 +1167,7 @@ public:
 
     MCSymbol *&FunctionEndLabel = FunctionEndLabels[LabelIndex];
     if (!FunctionEndLabel) {
-      std::unique_lock<std::shared_timed_mutex> Lock(BC.CtxMutex);
+      std::unique_lock<llvm::sys::RWMutex> Lock(BC.CtxMutex);
       if (Fragment == FragmentNum::main())
         FunctionEndLabel = BC.Ctx->createNamedTempSymbol("func_end");
       else
@@ -1306,7 +1318,7 @@ public:
   /// Return the name of the section this function originated from.
   Optional<StringRef> getOriginSectionName() const {
     if (!OriginSection)
-      return NoneType();
+      return None;
     return OriginSection->getName();
   }
 
@@ -1438,6 +1450,8 @@ public:
 
   const LSDATypeTableTy &getLSDATypeTable() const { return LSDATypeTable; }
 
+  unsigned getLSDATypeEncoding() const { return LSDATypeEncoding; }
+
   const LSDATypeTableTy &getLSDATypeAddressTable() const {
     return LSDATypeAddressTable;
   }
@@ -1477,7 +1491,7 @@ public:
   std::unique_ptr<BinaryBasicBlock>
   createBasicBlock(MCSymbol *Label = nullptr) {
     if (!Label) {
-      std::unique_lock<std::shared_timed_mutex> Lock(BC.CtxMutex);
+      std::unique_lock<llvm::sys::RWMutex> Lock(BC.CtxMutex);
       Label = BC.Ctx->createNamedTempSymbol("BB");
     }
     auto BB =
@@ -1771,6 +1785,7 @@ public:
     return *this;
   }
 
+  Align getAlign() const { return Align(Alignment); }
   uint16_t getAlignment() const { return Alignment; }
 
   BinaryFunction &setMaxAlignmentBytes(uint16_t MaxAlignBytes) {
@@ -1865,7 +1880,7 @@ public:
   MCSymbol *getLSDASymbol(const FragmentNum F) {
     if (F.get() < LSDASymbols.size() && LSDASymbols[F.get()] != nullptr)
       return LSDASymbols[F.get()];
-    if (llvm::empty(getCallSites(F)))
+    if (getCallSites(F).empty())
       return nullptr;
 
     if (F.get() >= LSDASymbols.size())
@@ -2109,6 +2124,12 @@ public:
   /// Return true upon successful processing, or false if the control flow
   /// cannot be statically evaluated for any given indirect branch.
   bool postProcessIndirectBranches(MCPlusBuilder::AllocatorIdTy AllocId);
+
+  /// Validate that all data references to function offsets are claimed by
+  /// recognized jump tables. Register externally referenced blocks as entry
+  /// points. Returns true if there are no unclaimed externally referenced
+  /// offsets.
+  bool validateExternallyReferencedOffsets();
 
   /// Return all call site profile info for this function.
   IndirectCallSiteProfile &getAllCallSites() { return AllCallSites; }

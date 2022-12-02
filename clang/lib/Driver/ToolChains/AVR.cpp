@@ -14,7 +14,6 @@
 #include "clang/Driver/Options.h"
 #include "llvm/ADT/Optional.h"
 #include "llvm/ADT/StringExtras.h"
-#include "llvm/ADT/StringSwitch.h"
 #include "llvm/MC/MCSubtargetInfo.h"
 #include "llvm/MC/SubtargetFeature.h"
 #include "llvm/Option/ArgList.h"
@@ -346,14 +345,14 @@ llvm::Optional<StringRef> GetMCUFamilyName(StringRef MCUName) {
   for (const auto &MCU : MCUInfo)
     if (MCU.Name == MCUName)
       return Optional<StringRef>(MCU.Family);
-  return Optional<StringRef>();
+  return None;
 }
 
 llvm::Optional<unsigned> GetMCUSectionAddressData(StringRef MCUName) {
   for (const auto &MCU : MCUInfo)
     if (MCU.Name == MCUName && MCU.DataAddr > 0)
       return Optional<unsigned>(MCU.DataAddr);
-  return Optional<unsigned>();
+  return None;
 }
 
 const StringRef PossibleAVRLibcLocations[] = {

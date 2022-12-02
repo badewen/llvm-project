@@ -10,7 +10,7 @@
 #include "TestAttributes.h"
 #include "TestInterfaces.h"
 #include "TestTypes.h"
-#include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/DLTI/DLTI.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
@@ -862,6 +862,21 @@ ParseResult ParseWrappedKeywordOp::parse(OpAsmParser &parser,
 
 void ParseWrappedKeywordOp::print(OpAsmPrinter &p) { p << " " << getKeyword(); }
 
+ParseResult ParseB64BytesOp::parse(OpAsmParser &parser,
+                                   OperationState &result) {
+  std::vector<char> bytes;
+  if (parser.parseBase64Bytes(&bytes))
+    return failure();
+  result.addAttribute("b64", parser.getBuilder().getStringAttr(
+                                 StringRef(&bytes.front(), bytes.size())));
+  return success();
+}
+
+void ParseB64BytesOp::print(OpAsmPrinter &p) {
+  // Don't print the base64 version to check that we decoded it correctly.
+  p << " \"" << getB64() << "\"";
+}
+
 //===----------------------------------------------------------------------===//
 // Test WrapRegionOp - wrapping op exercising `parseGenericOperation()`.
 
@@ -1031,6 +1046,26 @@ void PolyForOp::getAsmBlockArgumentNames(Region &region,
 }
 
 //===----------------------------------------------------------------------===//
+// TestAttrWithLoc - parse/printOptionalLocationSpecifier
+//===----------------------------------------------------------------------===//
+
+static ParseResult parseOptionalLoc(OpAsmParser &p, Attribute &loc) {
+  Optional<Location> result;
+  SMLoc sourceLoc = p.getCurrentLocation();
+  if (p.parseOptionalLocationSpecifier(result))
+    return failure();
+  if (result)
+    loc = *result;
+  else
+    loc = p.getEncodedSourceLoc(sourceLoc);
+  return success();
+}
+
+static void printOptionalLoc(OpAsmPrinter &p, Operation *op, Attribute loc) {
+  p.printOptionalLocationSpecifier(loc.cast<LocationAttr>());
+}
+
+//===----------------------------------------------------------------------===//
 // Test removing op with inner ops.
 //===----------------------------------------------------------------------===//
 
@@ -1137,7 +1172,7 @@ LogicalResult OpWithShapedTypeInferTypeInterfaceOp::inferReturnTypeComponents(
     return emitOptionalError(location, "only shaped type operands allowed");
   }
   int64_t dim =
-      sval.hasRank() ? sval.getShape().front() : ShapedType::kDynamicSize;
+      sval.hasRank() ? sval.getShape().front() : ShapedType::kDynamic;
   auto type = IntegerType::get(context, 17);
   inferredReturnShapes.push_back(ShapedTypeComponents({dim}, type));
   return success();

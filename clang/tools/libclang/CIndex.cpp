@@ -1747,7 +1747,13 @@ bool CursorVisitor::VisitRValueReferenceTypeLoc(RValueReferenceTypeLoc TL) {
   return Visit(TL.getPointeeLoc());
 }
 
-bool CursorVisitor::VisitUsingTypeLoc(UsingTypeLoc TL) { return false; }
+bool CursorVisitor::VisitUsingTypeLoc(UsingTypeLoc TL) {
+  auto *underlyingDecl = TL.getUnderlyingType()->getAsTagDecl();
+  if (underlyingDecl) {
+    return Visit(MakeCursorTypeRef(underlyingDecl, TL.getNameLoc(), TU));
+  }
+  return false;
+}
 
 bool CursorVisitor::VisitAttributedTypeLoc(AttributedTypeLoc TL) {
   return Visit(TL.getModifiedLoc());
@@ -1817,7 +1823,7 @@ bool CursorVisitor::VisitTypeOfExprTypeLoc(TypeOfExprTypeLoc TL) {
 }
 
 bool CursorVisitor::VisitTypeOfTypeLoc(TypeOfTypeLoc TL) {
-  if (TypeSourceInfo *TSInfo = TL.getUnderlyingTInfo())
+  if (TypeSourceInfo *TSInfo = TL.getUnmodifiedTInfo())
     return Visit(TSInfo->getTypeLoc());
 
   return false;
@@ -2158,6 +2164,7 @@ public:
   void VisitOMPTaskyieldDirective(const OMPTaskyieldDirective *D);
   void VisitOMPBarrierDirective(const OMPBarrierDirective *D);
   void VisitOMPTaskwaitDirective(const OMPTaskwaitDirective *D);
+  void VisitOMPErrorDirective(const OMPErrorDirective *D);
   void VisitOMPTaskgroupDirective(const OMPTaskgroupDirective *D);
   void
   VisitOMPCancellationPointDirective(const OMPCancellationPointDirective *D);
@@ -2435,6 +2442,12 @@ void OMPClauseEnqueue::VisitOMPDynamicAllocatorsClause(
 
 void OMPClauseEnqueue::VisitOMPAtomicDefaultMemOrderClause(
     const OMPAtomicDefaultMemOrderClause *) {}
+
+void OMPClauseEnqueue::VisitOMPAtClause(const OMPAtClause *) {}
+
+void OMPClauseEnqueue::VisitOMPSeverityClause(const OMPSeverityClause *) {}
+
+void OMPClauseEnqueue::VisitOMPMessageClause(const OMPMessageClause *) {}
 
 void OMPClauseEnqueue::VisitOMPDeviceClause(const OMPDeviceClause *C) {
   Visitor->AddStmt(C->getDevice());
@@ -3105,6 +3118,10 @@ void EnqueueVisitor::VisitOMPBarrierDirective(const OMPBarrierDirective *D) {
 }
 
 void EnqueueVisitor::VisitOMPTaskwaitDirective(const OMPTaskwaitDirective *D) {
+  VisitOMPExecutableDirective(D);
+}
+
+void EnqueueVisitor::VisitOMPErrorDirective(const OMPErrorDirective *D) {
   VisitOMPExecutableDirective(D);
 }
 
@@ -5813,6 +5830,8 @@ CXString clang_getCursorKindSpelling(enum CXCursorKind Kind) {
     return cxstring::createRef("OMPBarrierDirective");
   case CXCursor_OMPTaskwaitDirective:
     return cxstring::createRef("OMPTaskwaitDirective");
+  case CXCursor_OMPErrorDirective:
+    return cxstring::createRef("OMPErrorDirective");
   case CXCursor_OMPTaskgroupDirective:
     return cxstring::createRef("OMPTaskgroupDirective");
   case CXCursor_OMPFlushDirective:
@@ -6658,6 +6677,7 @@ CXCursor clang_getCursorDefinition(CXCursor C) {
   case Decl::Binding:
   case Decl::MSProperty:
   case Decl::MSGuid:
+  case Decl::HLSLBuffer:
   case Decl::UnnamedGlobalConstant:
   case Decl::TemplateParamObject:
   case Decl::IndirectField:
@@ -6693,6 +6713,7 @@ CXCursor clang_getCursorDefinition(CXCursor C) {
   case Decl::PragmaDetectMismatch:
   case Decl::UsingPack:
   case Decl::Concept:
+  case Decl::ImplicitConceptSpecialization:
   case Decl::LifetimeExtendedTemporary:
   case Decl::RequiresExprBody:
   case Decl::UnresolvedUsingIfExists:
@@ -8861,6 +8882,16 @@ unsigned clang_CXXMethod_isDefaulted(CXCursor C) {
   return (Method && Method->isDefaulted()) ? 1 : 0;
 }
 
+unsigned clang_CXXMethod_isDeleted(CXCursor C) {
+  if (!clang_isDeclaration(C.kind))
+    return 0;
+
+  const Decl *D = cxcursor::getCursorDecl(C);
+  const CXXMethodDecl *Method =
+      D ? dyn_cast_if_present<CXXMethodDecl>(D->getAsFunction()) : nullptr;
+  return (Method && Method->isDeleted()) ? 1 : 0;
+}
+
 unsigned clang_CXXMethod_isStatic(CXCursor C) {
   if (!clang_isDeclaration(C.kind))
     return 0;
@@ -8879,6 +8910,28 @@ unsigned clang_CXXMethod_isVirtual(CXCursor C) {
   const CXXMethodDecl *Method =
       D ? dyn_cast_or_null<CXXMethodDecl>(D->getAsFunction()) : nullptr;
   return (Method && Method->isVirtual()) ? 1 : 0;
+}
+
+unsigned clang_CXXMethod_isCopyAssignmentOperator(CXCursor C) {
+  if (!clang_isDeclaration(C.kind))
+    return 0;
+
+  const Decl *D = cxcursor::getCursorDecl(C);
+  const CXXMethodDecl *Method =
+      D ? dyn_cast_or_null<CXXMethodDecl>(D->getAsFunction()) : nullptr;
+
+  return (Method && Method->isCopyAssignmentOperator()) ? 1 : 0;
+}
+
+unsigned clang_CXXMethod_isMoveAssignmentOperator(CXCursor C) {
+  if (!clang_isDeclaration(C.kind))
+    return 0;
+
+  const Decl *D = cxcursor::getCursorDecl(C);
+  const CXXMethodDecl *Method =
+      D ? dyn_cast_or_null<CXXMethodDecl>(D->getAsFunction()) : nullptr;
+
+  return (Method && Method->isMoveAssignmentOperator()) ? 1 : 0;
 }
 
 unsigned clang_CXXRecord_isAbstract(CXCursor C) {

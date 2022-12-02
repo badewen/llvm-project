@@ -47,6 +47,7 @@
 #include "llvm/Pass.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
+#include <optional>
 
 #define DEBUG_TYPE "aarch64-isel"
 
@@ -1420,7 +1421,7 @@ static Register getTestBitReg(Register Reg, uint64_t &Bit, bool &Invert,
     }
 
     // Attempt to find a suitable operation with a constant on one side.
-    Optional<uint64_t> C;
+    std::optional<uint64_t> C;
     Register TestReg;
     switch (Opc) {
     default:
@@ -1679,6 +1680,15 @@ bool AArch64InstructionSelector::tryOptCompareBranchFedByICmp(
     if (C == 0 && Pred == CmpInst::ICMP_SLT) {
       uint64_t Bit = MRI.getType(LHS).getSizeInBits() - 1;
       emitTestBit(LHS, Bit, /*IsNegative = */ true, DestMBB, MIB);
+      I.eraseFromParent();
+      return true;
+    }
+
+    // Inversely, if we have a signed greater-than-or-equal comparison to zero,
+    // we can test if the msb is zero.
+    if (C == 0 && Pred == CmpInst::ICMP_SGE) {
+      uint64_t Bit = MRI.getType(LHS).getSizeInBits() - 1;
+      emitTestBit(LHS, Bit, /*IsNegative = */ false, DestMBB, MIB);
       I.eraseFromParent();
       return true;
     }
@@ -2341,10 +2351,10 @@ bool AArch64InstructionSelector::earlySelect(MachineInstr &I) {
   }
   case TargetOpcode::G_FENCE: {
     if (I.getOperand(1).getImm() == 0)
-      BuildMI(MBB, I, I.getDebugLoc(), TII.get(AArch64::CompilerBarrier))
+      BuildMI(MBB, I, MIMetadata(I), TII.get(AArch64::CompilerBarrier))
           .addImm(I.getOperand(0).getImm());
     else
-      BuildMI(MBB, I, I.getDebugLoc(), TII.get(AArch64::DMB))
+      BuildMI(MBB, I, MIMetadata(I), TII.get(AArch64::DMB))
           .addImm(I.getOperand(0).getImm() == 4 ? 0x9 : 0xb);
     I.eraseFromParent();
     return true;
@@ -2829,7 +2839,7 @@ bool AArch64InstructionSelector::select(MachineInstr &I) {
         static constexpr unsigned LDAROpcodes[] = {
             AArch64::LDARB, AArch64::LDARH, AArch64::LDARW, AArch64::LDARX};
         ArrayRef<unsigned> Opcodes =
-            STI.hasLDAPR() && Order != AtomicOrdering::SequentiallyConsistent
+            STI.hasRCPC() && Order != AtomicOrdering::SequentiallyConsistent
                 ? LDAPROpcodes
                 : LDAROpcodes;
         I.setDesc(TII.get(Opcodes[Log2_32(MemSizeInBytes)]));
@@ -3269,24 +3279,12 @@ bool AArch64InstructionSelector::select(MachineInstr &I) {
 
       // For the 32-bit -> 64-bit case, we can emit a mov (ORRWrs)
       // + SUBREG_TO_REG.
-      //
-      // If we are zero extending from 32 bits to 64 bits, it's possible that
-      // the instruction implicitly does the zero extend for us. In that case,
-      // we only need the SUBREG_TO_REG.
       if (IsGPR && SrcSize == 32 && DstSize == 64) {
-        // Unlike with the G_LOAD case, we don't want to look through copies
-        // here. (See isDef32.)
-        MachineInstr *Def = MRI.getVRegDef(SrcReg);
-        Register SubregToRegSrc = SrcReg;
-
-        // Does the instruction implicitly zero extend?
-        if (!Def || !isDef32(*Def)) {
-          // No. Zero out using an OR.
-          Register OrDst = MRI.createVirtualRegister(&AArch64::GPR32RegClass);
-          const Register ZReg = AArch64::WZR;
-          MIB.buildInstr(AArch64::ORRWrs, {OrDst}, {ZReg, SrcReg}).addImm(0);
-          SubregToRegSrc = OrDst;
-        }
+        Register SubregToRegSrc =
+            MRI.createVirtualRegister(&AArch64::GPR32RegClass);
+        const Register ZReg = AArch64::WZR;
+        MIB.buildInstr(AArch64::ORRWrs, {SubregToRegSrc}, {ZReg, SrcReg})
+            .addImm(0);
 
         MIB.buildInstr(AArch64::SUBREG_TO_REG, {DefReg}, {})
             .addImm(0)
@@ -5845,7 +5843,7 @@ bool AArch64InstructionSelector::selectIntrinsic(MachineInstr &I,
     auto DiscVal = getIConstantVRegVal(DiscReg, MRI);
     bool IsDiscZero = DiscVal && DiscVal->isNullValue();
 
-    if (Key > 3)
+    if (Key > AArch64PACKey::LAST)
       return false;
 
     unsigned Opcodes[][4] = {
@@ -5861,6 +5859,22 @@ bool AArch64InstructionSelector::selectIntrinsic(MachineInstr &I,
     }
 
     RBI.constrainGenericRegister(DstReg, AArch64::GPR64RegClass, MRI);
+    I.eraseFromParent();
+    return true;
+  }
+  case Intrinsic::ptrauth_strip: {
+    Register DstReg = I.getOperand(0).getReg();
+    Register ValReg = I.getOperand(2).getReg();
+    uint64_t Key = I.getOperand(3).getImm();
+
+    if (Key > AArch64PACKey::LAST)
+      return false;
+    unsigned Opcode = getXPACOpcodeForKey((AArch64PACKey::ID)Key);
+
+    MIB.buildInstr(Opcode, {DstReg}, {ValReg});
+
+    RBI.constrainGenericRegister(DstReg, AArch64::GPR64RegClass, MRI);
+    RBI.constrainGenericRegister(ValReg, AArch64::GPR64RegClass, MRI);
     I.eraseFromParent();
     return true;
   }

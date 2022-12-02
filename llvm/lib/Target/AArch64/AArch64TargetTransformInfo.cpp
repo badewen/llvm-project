@@ -106,8 +106,28 @@ cl::opt<TailFoldingKind, true, cl::parser<std::string>> SVETailFolding(
         "recurrences"),
     cl::location(TailFoldingKindLoc));
 
+// Experimental option that will only be fully functional when the
+// code-generator is changed to use SVE instead of NEON for all fixed-width
+// operations.
+static cl::opt<bool> EnableFixedwidthAutovecInStreamingMode(
+    "enable-fixedwidth-autovec-in-streaming-mode", cl::init(false), cl::Hidden);
+
+// Experimental option that will only be fully functional when the cost-model
+// and code-generator have been changed to avoid using scalable vector
+// instructions that are not legal in streaming SVE mode.
+static cl::opt<bool> EnableScalableAutovecInStreamingMode(
+    "enable-scalable-autovec-in-streaming-mode", cl::init(false), cl::Hidden);
+
 bool AArch64TTIImpl::areInlineCompatible(const Function *Caller,
                                          const Function *Callee) const {
+  SMEAttrs CallerAttrs(*Caller);
+  SMEAttrs CalleeAttrs(*Callee);
+  if (CallerAttrs.requiresSMChange(CalleeAttrs,
+                                   /*BodyOverridesInterface=*/true) ||
+      CallerAttrs.requiresLazySave(CalleeAttrs) ||
+      CalleeAttrs.hasNewZAInterface())
+    return false;
+
   const TargetMachine &TM = getTLI()->getTargetMachine();
 
   const FeatureBitset &CallerBits =
@@ -955,23 +975,69 @@ instCombineSVECntElts(InstCombiner &IC, IntrinsicInst &II, unsigned NumElts) {
 
 static Optional<Instruction *> instCombineSVEPTest(InstCombiner &IC,
                                                    IntrinsicInst &II) {
-  IntrinsicInst *Op1 = dyn_cast<IntrinsicInst>(II.getArgOperand(0));
-  IntrinsicInst *Op2 = dyn_cast<IntrinsicInst>(II.getArgOperand(1));
+  Value *PgVal = II.getArgOperand(0);
+  Value *OpVal = II.getArgOperand(1);
 
-  if (Op1 && Op2 &&
-      Op1->getIntrinsicID() == Intrinsic::aarch64_sve_convert_to_svbool &&
-      Op2->getIntrinsicID() == Intrinsic::aarch64_sve_convert_to_svbool &&
-      Op1->getArgOperand(0)->getType() == Op2->getArgOperand(0)->getType()) {
+  IRBuilder<> Builder(II.getContext());
+  Builder.SetInsertPoint(&II);
 
-    IRBuilder<> Builder(II.getContext());
-    Builder.SetInsertPoint(&II);
+  // PTEST_<FIRST|LAST>(X, X) is equivalent to PTEST_ANY(X, X).
+  // Later optimizations prefer this form.
+  if (PgVal == OpVal &&
+      (II.getIntrinsicID() == Intrinsic::aarch64_sve_ptest_first ||
+       II.getIntrinsicID() == Intrinsic::aarch64_sve_ptest_last)) {
+    Value *Ops[] = {PgVal, OpVal};
+    Type *Tys[] = {PgVal->getType()};
 
-    Value *Ops[] = {Op1->getArgOperand(0), Op2->getArgOperand(0)};
-    Type *Tys[] = {Op1->getArgOperand(0)->getType()};
+    auto *PTest =
+        Builder.CreateIntrinsic(Intrinsic::aarch64_sve_ptest_any, Tys, Ops);
+    PTest->takeName(&II);
+
+    return IC.replaceInstUsesWith(II, PTest);
+  }
+
+  IntrinsicInst *Pg = dyn_cast<IntrinsicInst>(PgVal);
+  IntrinsicInst *Op = dyn_cast<IntrinsicInst>(OpVal);
+
+  if (!Pg || !Op)
+    return None;
+
+  Intrinsic::ID OpIID = Op->getIntrinsicID();
+
+  if (Pg->getIntrinsicID() == Intrinsic::aarch64_sve_convert_to_svbool &&
+      OpIID == Intrinsic::aarch64_sve_convert_to_svbool &&
+      Pg->getArgOperand(0)->getType() == Op->getArgOperand(0)->getType()) {
+    Value *Ops[] = {Pg->getArgOperand(0), Op->getArgOperand(0)};
+    Type *Tys[] = {Pg->getArgOperand(0)->getType()};
 
     auto *PTest = Builder.CreateIntrinsic(II.getIntrinsicID(), Tys, Ops);
 
     PTest->takeName(&II);
+    return IC.replaceInstUsesWith(II, PTest);
+  }
+
+  // Transform PTEST_ANY(X=OP(PG,...), X) -> PTEST_ANY(PG, X)).
+  // Later optimizations may rewrite sequence to use the flag-setting variant
+  // of instruction X to remove PTEST.
+  if ((Pg == Op) && (II.getIntrinsicID() == Intrinsic::aarch64_sve_ptest_any) &&
+      ((OpIID == Intrinsic::aarch64_sve_brka_z) ||
+       (OpIID == Intrinsic::aarch64_sve_brkb_z) ||
+       (OpIID == Intrinsic::aarch64_sve_brkpa_z) ||
+       (OpIID == Intrinsic::aarch64_sve_brkpb_z) ||
+       (OpIID == Intrinsic::aarch64_sve_rdffr_z) ||
+       (OpIID == Intrinsic::aarch64_sve_and_z) ||
+       (OpIID == Intrinsic::aarch64_sve_bic_z) ||
+       (OpIID == Intrinsic::aarch64_sve_eor_z) ||
+       (OpIID == Intrinsic::aarch64_sve_nand_z) ||
+       (OpIID == Intrinsic::aarch64_sve_nor_z) ||
+       (OpIID == Intrinsic::aarch64_sve_orn_z) ||
+       (OpIID == Intrinsic::aarch64_sve_orr_z))) {
+    Value *Ops[] = {Pg->getArgOperand(0), Pg};
+    Type *Tys[] = {Pg->getType()};
+
+    auto *PTest = Builder.CreateIntrinsic(II.getIntrinsicID(), Tys, Ops);
+    PTest->takeName(&II);
+
     return IC.replaceInstUsesWith(II, PTest);
   }
 
@@ -1200,32 +1266,6 @@ static Optional<Instruction *> instCombineSVETBL(InstCombiner &IC,
   return IC.replaceInstUsesWith(II, VectorSplat);
 }
 
-static Optional<Instruction *> instCombineSVETupleGet(InstCombiner &IC,
-                                                      IntrinsicInst &II) {
-  // Try to remove sequences of tuple get/set.
-  Value *SetTuple, *SetIndex, *SetValue;
-  auto *GetTuple = II.getArgOperand(0);
-  auto *GetIndex = II.getArgOperand(1);
-  // Check that we have tuple_get(GetTuple, GetIndex) where GetTuple is a
-  // call to tuple_set i.e. tuple_set(SetTuple, SetIndex, SetValue).
-  // Make sure that the types of the current intrinsic and SetValue match
-  // in order to safely remove the sequence.
-  if (!match(GetTuple,
-             m_Intrinsic<Intrinsic::aarch64_sve_tuple_set>(
-                 m_Value(SetTuple), m_Value(SetIndex), m_Value(SetValue))) ||
-      SetValue->getType() != II.getType())
-    return None;
-  // Case where we get the same index right after setting it.
-  // tuple_get(tuple_set(SetTuple, SetIndex, SetValue), GetIndex) --> SetValue
-  if (GetIndex == SetIndex)
-    return IC.replaceInstUsesWith(II, SetValue);
-  // If we are getting a different index than what was set in the tuple_set
-  // intrinsic. We can just set the input tuple to the one up in the chain.
-  // tuple_get(tuple_set(SetTuple, SetIndex, SetValue), GetIndex)
-  // --> tuple_get(SetTuple, GetIndex)
-  return IC.replaceOperand(II, 0, SetTuple);
-}
-
 static Optional<Instruction *> instCombineSVEZip(InstCombiner &IC,
                                                  IntrinsicInst &II) {
   // zip1(uzp1(A, B), uzp2(A, B)) --> A
@@ -1440,8 +1480,6 @@ AArch64TTIImpl::instCombineIntrinsic(InstCombiner &IC,
   case Intrinsic::aarch64_sve_sunpkhi:
   case Intrinsic::aarch64_sve_sunpklo:
     return instCombineSVEUnpack(IC, II);
-  case Intrinsic::aarch64_sve_tuple_get:
-    return instCombineSVETupleGet(IC, II);
   case Intrinsic::aarch64_sve_zip1:
   case Intrinsic::aarch64_sve_zip2:
     return instCombineSVEZip(IC, II);
@@ -1490,6 +1528,30 @@ Optional<Value *> AArch64TTIImpl::simplifyDemandedVectorEltsIntrinsic(
   return None;
 }
 
+TypeSize
+AArch64TTIImpl::getRegisterBitWidth(TargetTransformInfo::RegisterKind K) const {
+  switch (K) {
+  case TargetTransformInfo::RGK_Scalar:
+    return TypeSize::getFixed(64);
+  case TargetTransformInfo::RGK_FixedWidthVector:
+    if (!ST->isStreamingSVEModeDisabled() &&
+        !EnableFixedwidthAutovecInStreamingMode)
+      return TypeSize::getFixed(0);
+
+    if (ST->hasSVE())
+      return TypeSize::getFixed(
+          std::max(ST->getMinSVEVectorSizeInBits(), 128u));
+
+    return TypeSize::getFixed(ST->hasNEON() ? 128 : 0);
+  case TargetTransformInfo::RGK_ScalableVector:
+    if (!ST->isStreamingSVEModeDisabled() && !EnableScalableAutovecInStreamingMode)
+      return TypeSize::getScalable(0);
+
+    return TypeSize::getScalable(ST->hasSVE() ? 128 : 0);
+  }
+  llvm_unreachable("Unsupported register kind");
+}
+
 bool AArch64TTIImpl::isWideningInstruction(Type *DstTy, unsigned Opcode,
                                            ArrayRef<const Value *> Args) {
 
@@ -1501,8 +1563,11 @@ bool AArch64TTIImpl::isWideningInstruction(Type *DstTy, unsigned Opcode,
   };
 
   // Exit early if DstTy is not a vector type whose elements are at least
-  // 16-bits wide.
-  if (!DstTy->isVectorTy() || DstTy->getScalarSizeInBits() < 16)
+  // 16-bits wide. SVE doesn't generally have the same set of instructions to
+  // perform an extend with the add/sub/mul. There are SMULLB style
+  // instructions, but they operate on top/bottom, requiring some sort of lane
+  // interleaving to be used with zext/sext.
+  if (!useNeonVector(DstTy) || DstTy->getScalarSizeInBits() < 16)
     return false;
 
   // Determine if the operation has a widening variant. We consider both the
@@ -2076,12 +2141,53 @@ InstructionCost AArch64TTIImpl::getArithmeticInstrCost(
     InstructionCost Cost = BaseT::getArithmeticInstrCost(
         Opcode, Ty, CostKind, Op1Info, Op2Info);
     if (Ty->isVectorTy()) {
-      // On AArch64, vector divisions are not supported natively and are
-      // expanded into scalar divisions of each pair of elements.
-      Cost += getArithmeticInstrCost(Instruction::ExtractElement, Ty, CostKind,
-                                     Op1Info, Op2Info);
-      Cost += getArithmeticInstrCost(Instruction::InsertElement, Ty, CostKind,
-                                     Op1Info, Op2Info);
+      if (TLI->isOperationLegalOrCustom(ISD, LT.second) && ST->hasSVE()) {
+        // SDIV/UDIV operations are lowered using SVE, then we can have less
+        // costs.
+        if (isa<FixedVectorType>(Ty) &&
+            cast<FixedVectorType>(Ty)->getPrimitiveSizeInBits().getFixedSize() <
+                128) {
+          EVT VT = TLI->getValueType(DL, Ty);
+          static const CostTblEntry DivTbl[]{
+              {ISD::SDIV, MVT::v2i8, 5},  {ISD::SDIV, MVT::v4i8, 8},
+              {ISD::SDIV, MVT::v8i8, 8},  {ISD::SDIV, MVT::v2i16, 5},
+              {ISD::SDIV, MVT::v4i16, 5}, {ISD::SDIV, MVT::v2i32, 1},
+              {ISD::UDIV, MVT::v2i8, 5},  {ISD::UDIV, MVT::v4i8, 8},
+              {ISD::UDIV, MVT::v8i8, 8},  {ISD::UDIV, MVT::v2i16, 5},
+              {ISD::UDIV, MVT::v4i16, 5}, {ISD::UDIV, MVT::v2i32, 1}};
+
+          const auto *Entry = CostTableLookup(DivTbl, ISD, VT.getSimpleVT());
+          if (nullptr != Entry)
+            return Entry->Cost;
+        }
+        // For 8/16-bit elements, the cost is higher because the type
+        // requires promotion and possibly splitting:
+        if (LT.second.getScalarType() == MVT::i8)
+          Cost *= 8;
+        else if (LT.second.getScalarType() == MVT::i16)
+          Cost *= 4;
+        return Cost;
+      } else {
+        // If one of the operands is a uniform constant then the cost for each
+        // element is Cost for insertion, extraction and division.
+        // Insertion cost = 2, Extraction Cost = 2, Division = cost for the
+        // operation with scalar type
+        if ((Op1Info.isConstant() && Op1Info.isUniform()) ||
+            (Op2Info.isConstant() && Op2Info.isUniform())) {
+          if (auto *VTy = dyn_cast<FixedVectorType>(Ty)) {
+            InstructionCost DivCost = BaseT::getArithmeticInstrCost(
+                Opcode, Ty->getScalarType(), CostKind, Op1Info, Op2Info);
+            return (4 + DivCost) * VTy->getNumElements();
+          }
+        }
+        // On AArch64, without SVE, vector divisions are expanded
+        // into scalar divisions of each pair of elements.
+        Cost += getArithmeticInstrCost(Instruction::ExtractElement, Ty,
+                                       CostKind, Op1Info, Op2Info);
+        Cost += getArithmeticInstrCost(Instruction::InsertElement, Ty, CostKind,
+                                       Op1Info, Op2Info);
+      }
+
       // TODO: if one of the arguments is scalar, then it's not necessary to
       // double the cost of handling the vector elements.
       Cost += Cost;
@@ -2089,16 +2195,23 @@ InstructionCost AArch64TTIImpl::getArithmeticInstrCost(
     return Cost;
   }
   case ISD::MUL:
-    // Since we do not have a MUL.2d instruction, a mul <2 x i64> is expensive
-    // as elements are extracted from the vectors and the muls scalarized.
-    // As getScalarizationOverhead is a bit too pessimistic, we estimate the
-    // cost for a i64 vector directly here, which is:
+    // When SVE is available, then we can lower the v2i64 operation using
+    // the SVE mul instruction, which has a lower cost.
+    if (LT.second == MVT::v2i64 && ST->hasSVE())
+      return LT.first;
+
+    // When SVE is not available, there is no MUL.2d instruction,
+    // which means mul <2 x i64> is expensive as elements are extracted
+    // from the vectors and the muls scalarized.
+    // As getScalarizationOverhead is a bit too pessimistic, we
+    // estimate the cost for a i64 vector directly here, which is:
     // - four 2-cost i64 extracts,
     // - two 2-cost i64 inserts, and
     // - two 1-cost muls.
     // So, for a v2i64 with LT.First = 1 the cost is 14, and for a v4i64 with
     // LT.first = 2 the cost is 28. If both operands are extensions it will not
     // need to scalarize so the cost can be cheaper (smull or umull).
+    // so the cost can be cheaper (smull or umull).
     if (LT.second != MVT::v2i64 || isWideningInstruction(Ty, Opcode, Args))
       return LT.first;
     return LT.first * 14;
@@ -2529,7 +2642,7 @@ Value *AArch64TTIImpl::getOrCreateResultFromMemIntrinsic(IntrinsicInst *Inst,
       if (Inst->getArgOperand(i)->getType() != ST->getElementType(i))
         return nullptr;
     }
-    Value *Res = UndefValue::get(ExpectedType);
+    Value *Res = PoisonValue::get(ExpectedType);
     IRBuilder<> Builder(Inst);
     for (unsigned i = 0, e = NumElts; i != e; ++i) {
       Value *L = Inst->getArgOperand(i);
