@@ -52,7 +52,7 @@ jobs:
           set CXX=cl
           cmake -GNinja -DCMAKE_BUILD_TYPE=MinSizeRel -DCMAKE_INSTALL_PREFIX=install -DLLVM_TARGETS_TO_BUILD=AArch64 -DLLVM_DEFAULT_TARGET_TRIPLE=aarch64-unknown-none-eabi -DCMAKE_CROSSCOMPILING=True -DLLVM_TARGET_ARCH=AArch64 -DCMAKE_CXX_FLAGS='-march=armv8.2-a -mtune=cortex-a77' -DLLVM_ENABLE_PROJECTS='clang;lld;clang-tools-extra' ../llvm
           ninja -w dupbuild=warn
-          
+          cmake --install
 
       - name: compress
         uses: a7ul/tar-action@v1.1.0
