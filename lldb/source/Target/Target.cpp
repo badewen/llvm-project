@@ -141,10 +141,8 @@ void Target::PrimeFromDummyTarget(Target &target) {
     AddBreakpoint(std::move(new_bp), false);
   }
 
-  for (auto bp_name_entry : target.m_breakpoint_names) {
-
-    BreakpointName *new_bp_name = new BreakpointName(*bp_name_entry.second);
-    AddBreakpointName(new_bp_name);
+  for (const auto &bp_name_entry : target.m_breakpoint_names) {
+    AddBreakpointName(std::make_unique<BreakpointName>(*bp_name_entry.second));
   }
 
   m_frame_recognizer_manager_up = std::make_unique<StackFrameRecognizerManager>(
@@ -712,8 +710,9 @@ void Target::AddNameToBreakpoint(BreakpointSP &bp_sp, const char *name,
   bp_sp->AddName(name);
 }
 
-void Target::AddBreakpointName(BreakpointName *bp_name) {
-  m_breakpoint_names.insert(std::make_pair(bp_name->GetName(), bp_name));
+void Target::AddBreakpointName(std::unique_ptr<BreakpointName> bp_name) {
+  m_breakpoint_names.insert(
+      std::make_pair(bp_name->GetName(), std::move(bp_name)));
 }
 
 BreakpointName *Target::FindBreakpointName(ConstString name, bool can_create,
@@ -723,19 +722,20 @@ BreakpointName *Target::FindBreakpointName(ConstString name, bool can_create,
     return nullptr;
 
   BreakpointNameList::iterator iter = m_breakpoint_names.find(name);
-  if (iter == m_breakpoint_names.end()) {
-    if (!can_create) {
-      error.SetErrorStringWithFormat("Breakpoint name \"%s\" doesn't exist and "
-                                     "can_create is false.",
-                                     name.AsCString());
-      return nullptr;
-    }
-
-    iter = m_breakpoint_names
-               .insert(std::make_pair(name, new BreakpointName(name)))
-               .first;
+  if (iter != m_breakpoint_names.end()) {
+    return iter->second.get();
   }
-  return (iter->second);
+
+  if (!can_create) {
+    error.SetErrorStringWithFormat("Breakpoint name \"%s\" doesn't exist and "
+                                   "can_create is false.",
+                                   name.AsCString());
+    return nullptr;
+  }
+
+  return m_breakpoint_names
+      .insert(std::make_pair(name, std::make_unique<BreakpointName>(name)))
+      .first->second.get();
 }
 
 void Target::DeleteBreakpointName(ConstString name) {
@@ -778,8 +778,8 @@ void Target::ApplyNameToBreakpoints(BreakpointName &bp_name) {
 
 void Target::GetBreakpointNames(std::vector<std::string> &names) {
   names.clear();
-  for (auto bp_name : m_breakpoint_names) {
-    names.push_back(bp_name.first.AsCString());
+  for (const auto& bp_name_entry : m_breakpoint_names) {
+    names.push_back(bp_name_entry.first.AsCString());
   }
   llvm::sort(names);
 }
@@ -1696,12 +1696,16 @@ void Target::ModulesDidUnload(ModuleList &module_list, bool delete_locations) {
           auto *object_file = module.GetObjectFile();
 
           if (!object_file)
-            return true;
+            return false;
 
           auto type = object_file->GetType();
 
-          return type == ObjectFile::eTypeObjectFile ||
-                 type == ObjectFile::eTypeExecutable;
+          // eTypeExecutable: when debugged binary was rebuilt
+          // eTypeSharedLibrary: if dylib was re-loaded
+          return module.FileHasChanged() &&
+                 (type == ObjectFile::eTypeObjectFile ||
+                  type == ObjectFile::eTypeExecutable ||
+                  type == ObjectFile::eTypeSharedLibrary);
         });
 
     if (should_flush_type_systems)
@@ -3200,7 +3204,7 @@ Status Target::Launch(ProcessLaunchInfo &launch_info, Stream *stream) {
   assert(launch_info.GetHijackListener());
 
   EventSP first_stop_event_sp;
-  state = m_process_sp->WaitForProcessToStop(llvm::None, &first_stop_event_sp,
+  state = m_process_sp->WaitForProcessToStop(std::nullopt, &first_stop_event_sp,
                                              rebroadcast_first_stop,
                                              launch_info.GetHijackListener());
   m_process_sp->RestoreProcessEvents();
@@ -3356,8 +3360,9 @@ Status Target::Attach(ProcessAttachInfo &attach_info, Stream *stream) {
     if (async) {
       process_sp->RestoreProcessEvents();
     } else {
-      state = process_sp->WaitForProcessToStop(
-          llvm::None, nullptr, false, attach_info.GetHijackListener(), stream);
+      state = process_sp->WaitForProcessToStop(std::nullopt, nullptr, false,
+                                               attach_info.GetHijackListener(),
+                                               stream);
       process_sp->RestoreProcessEvents();
 
       if (state != eStateStopped) {

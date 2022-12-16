@@ -7,8 +7,14 @@ tied to that process.
 import lldb
 from lldbsuite.test.lldbtest import *
 from lldbsuite.test import lldbutil
+from lldbsuite.test.decorators import *
 
-class TestRerun(TestBase):
+class TestRerunExpr(TestBase):
+    # FIXME: on Windows rebuilding the binary isn't enough to unload it
+    #        on progrem restart. One will have to try hard to evict
+    #        the module from the ModuleList (possibly including a call to
+    #        SBDebugger::MemoryPressureDetected.
+    @skipIfWindows
     def test(self):
         """
         Tests whether re-launching a process without destroying
@@ -24,18 +30,24 @@ class TestRerun(TestBase):
            the latest definition of 'struct Foo' in the scratch AST.
         """
         self.build(dictionary={'CXX_SOURCES':'main.cpp', 'EXE':'a.out'})
-        (target, _, _, bkpt) = \
-                lldbutil.run_to_source_breakpoint(self, 'return', lldb.SBFileSpec('main.cpp'))
 
-        target.BreakpointCreateBySourceRegex('return', lldb.SBFileSpec('rebuild.cpp', False))
+        exe = self.getBuildArtifact("a.out")
+        target = self.dbg.CreateTarget(exe) 
+        target.BreakpointCreateBySourceRegex('return', lldb.SBFileSpec('rebuild.cpp'))
+        target.BreakpointCreateBySourceRegex('return', lldb.SBFileSpec('main.cpp'))
+        process = target.LaunchSimple(None, None, self.get_process_working_directory())  
 
         self.expect_expr('foo', result_type='Foo', result_children=[
                 ValueCheck(name='m_val', value='42')
             ])
 
+        # Delete the executable to force make to rebuild it.
+        remove_file(exe)
         self.build(dictionary={'CXX_SOURCES':'rebuild.cpp', 'EXE':'a.out'})
 
-        self.runCmd('process launch')
+        # Rerun program within the same target
+        process.Destroy()
+        process = target.LaunchSimple(None, None, self.get_process_working_directory())  
 
         self.expect_expr('foo', result_type='Foo', result_children=[
             ValueCheck(name='Base', children=[
@@ -51,6 +63,7 @@ class TestRerun(TestBase):
         # CHECK:      | |-public 'Base'
         # CHECK-NEXT: | `-FieldDecl {{.*}} m_derived_val 'int'
         # CHECK-NEXT: `-CXXRecordDecl {{.*}} struct Base definition
+        # CHECK:        `-FieldDecl {{.*}} m_base_val 'int'
 
         # ...but the original definition of 'struct Foo' is not in the scratch AST anymore
         # CHECK-NOT: FieldDecl {{.*}} m_val 'int'

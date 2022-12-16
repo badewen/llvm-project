@@ -102,9 +102,13 @@ enum NodeType : unsigned {
   FMINNM_PRED,
   FMUL_PRED,
   FSUB_PRED,
+  HADDS_PRED,
+  HADDU_PRED,
   MUL_PRED,
   MULHS_PRED,
   MULHU_PRED,
+  RHADDS_PRED,
+  RHADDU_PRED,
   SDIV_PRED,
   SHL_PRED,
   SMAX_PRED,
@@ -429,6 +433,12 @@ enum NodeType : unsigned {
   // Asserts that a function argument (i32) is zero-extended to i8 by
   // the caller
   ASSERT_ZEXT_BOOL,
+
+  // 128-bit system register accesses
+  // lo64, hi64, chain = MRRS(chain, sysregname)
+  MRRS,
+  // chain = MSRR(chain, sysregname, lo64, hi64)
+  MSRR,
 
   // Strict (exception-raising) floating point comparison
   STRICT_FCMP = ISD::FIRST_TARGET_STRICTFP_OPCODE,

@@ -592,13 +592,14 @@ cc_library(
         "//mlir:AffineToStandard",
         "//mlir:FuncDialect",
         "//mlir:FuncToLLVM",
-        "//mlir:IndexToLLVM",
         "//mlir:IR",
+        "//mlir:IndexToLLVM",
+        "//mlir:LLVMDialect",
         "//mlir:LinalgToLLVM",
         "//mlir:LinalgTransforms",
-        "//mlir:LLVMDialect",
         "//mlir:MathToLLVM",
         "//mlir:MemRefToLLVM",
+        "//mlir:MemRefTransforms",
         "//mlir:Pass",
         "//mlir:ReconcileUnrealizedCasts",
         "//mlir:SCFToControlFlow",
@@ -698,6 +699,34 @@ cc_library(
         "//mlir:Pass",
         "//mlir:Transforms",
         "//mlir:VectorDialect",
+    ],
+)
+
+cc_library(
+    name = "TestBufferization",
+    srcs = glob(["lib/Dialect/Bufferization/*.cpp"]),
+    defines = ["MLIR_CUDA_CONVERSIONS_ENABLED"],
+    includes = ["lib/Dialect/Test"],
+    deps = [
+        "//mlir:BufferizationDialect",
+        "//mlir:BufferizationTransforms",
+        "//mlir:IR",
+        "//mlir:Pass",
+    ],
+)
+
+cc_library(
+    name = "TestControlFlow",
+    srcs = glob(["lib/Dialect/ControlFlow/*.cpp"]),
+    includes = ["lib/Dialect/Test"],
+    deps = [
+        "//mlir:ControlFlowDialect",
+        "//mlir:ControlFlowToLLVM",
+        "//mlir:FuncDialect",
+        "//mlir:LLVMCommonConversion",
+        "//mlir:LLVMDialect",
+        "//mlir:Pass",
+        "//mlir:Transforms",
     ],
 )
 

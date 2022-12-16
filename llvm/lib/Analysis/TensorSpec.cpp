@@ -19,6 +19,7 @@
 #include "llvm/Support/JSON.h"
 #include "llvm/Support/ManagedStatic.h"
 #include "llvm/Support/raw_ostream.h"
+#include <array>
 #include <cassert>
 #include <numeric>
 
@@ -33,6 +34,29 @@ SUPPORTED_TENSOR_TYPES(TFUTILS_GETDATATYPE_IMPL)
 
 #undef TFUTILS_GETDATATYPE_IMPL
 
+static std::array<std::string, static_cast<size_t>(TensorType::Total)>
+    TensorTypeNames{"INVALID",
+#define TFUTILS_GETNAME_IMPL(T, _) #T,
+                    SUPPORTED_TENSOR_TYPES(TFUTILS_GETNAME_IMPL)
+#undef TFUTILS_GETNAME_IMPL
+    };
+
+StringRef toString(TensorType TT) {
+  return TensorTypeNames[static_cast<size_t>(TT)];
+}
+
+void TensorSpec::toJSON(json::OStream &OS) const {
+  OS.object([&]() {
+    OS.attribute("name", name());
+    OS.attribute("type", toString(type()));
+    OS.attribute("port", port());
+    OS.attributeArray("shape", [&]() {
+      for (size_t D : shape())
+        OS.value(static_cast<int64_t>(D));
+    });
+  });
+}
+
 TensorSpec::TensorSpec(const std::string &Name, int Port, TensorType Type,
                        size_t ElementSize, const std::vector<int64_t> &Shape)
     : Name(Name), Port(Port), Type(Type), Shape(Shape),
@@ -40,14 +64,15 @@ TensorSpec::TensorSpec(const std::string &Name, int Port, TensorType Type,
                                    std::multiplies<int64_t>())),
       ElementSize(ElementSize) {}
 
-Optional<TensorSpec> getTensorSpecFromJSON(LLVMContext &Ctx,
-                                           const json::Value &Value) {
-  auto EmitError = [&](const llvm::Twine &Message) -> Optional<TensorSpec> {
+std::optional<TensorSpec> getTensorSpecFromJSON(LLVMContext &Ctx,
+                                                const json::Value &Value) {
+  auto EmitError =
+      [&](const llvm::Twine &Message) -> std::optional<TensorSpec> {
     std::string S;
     llvm::raw_string_ostream OS(S);
     OS << Value;
     Ctx.emitError("Unable to parse JSON Value as spec (" + Message + "): " + S);
-    return None;
+    return std::nullopt;
   };
   // FIXME: accept a Path as a parameter, and use it for error reporting.
   json::Path::Root Root("tensor_spec");
@@ -74,7 +99,7 @@ Optional<TensorSpec> getTensorSpecFromJSON(LLVMContext &Ctx,
     return TensorSpec::createSpec<T>(TensorName, TensorShape, TensorPort);
   SUPPORTED_TENSOR_TYPES(PARSE_TYPE)
 #undef PARSE_TYPE
-  return None;
+  return std::nullopt;
 }
 
 } // namespace llvm
