@@ -131,7 +131,14 @@ public:
     EnsureDest(E->getType());
 
     if (llvm::Value *Result = ConstantEmitter(CGF).tryEmitConstantExpr(E)) {
-      CGF.EmitAggregateStore(Result, Dest.getAddress(),
+      Address StoreDest = Dest.getAddress();
+      // The emitted value is guaranteed to have the same size as the
+      // destination but can have a different type. Just do a bitcast in this
+      // case to avoid incorrect GEPs.
+      if (Result->getType() != StoreDest.getType())
+        StoreDest =
+            CGF.Builder.CreateElementBitCast(StoreDest, Result->getType());
+      CGF.EmitAggregateStore(Result, StoreDest,
                              E->getType().isVolatileQualified());
       return;
     }
@@ -205,7 +212,16 @@ public:
       return EmitFinalDestCopy(E->getType(), LV);
     }
 
-    CGF.EmitPseudoObjectRValue(E, EnsureSlot(E->getType()));
+    AggValueSlot Slot = EnsureSlot(E->getType());
+    bool NeedsDestruction =
+        !Slot.isExternallyDestructed() &&
+        E->getType().isDestructedType() == QualType::DK_nontrivial_c_struct;
+    if (NeedsDestruction)
+      Slot.setExternallyDestructed();
+    CGF.EmitPseudoObjectRValue(E, Slot);
+    if (NeedsDestruction)
+      CGF.pushDestroy(QualType::DK_nontrivial_c_struct, Slot.getAddress(),
+                      E->getType());
   }
 
   void VisitVAArgExpr(VAArgExpr *E);
@@ -516,8 +532,8 @@ void AggExprEmitter::EmitArrayInit(Address DestPtr, llvm::ArrayType *AType,
             Emitter.tryEmitForInitializer(ExprToVisit, AS, ArrayQTy)) {
       auto GV = new llvm::GlobalVariable(
           CGM.getModule(), C->getType(),
-          CGM.isTypeConstant(ArrayQTy, /* ExcludeCtorDtor= */ true),
-          llvm::GlobalValue::PrivateLinkage, C, "constinit",
+          /* isConstant= */ true, llvm::GlobalValue::PrivateLinkage, C,
+          "constinit",
           /* InsertBefore= */ nullptr, llvm::GlobalVariable::NotThreadLocal,
           CGM.getContext().getTargetAddressSpace(AS));
       Emitter.finalize(GV);
@@ -1601,20 +1617,8 @@ void AggExprEmitter::EmitNullInitializationToLValue(LValue lv) {
 }
 
 void AggExprEmitter::VisitCXXParenListInitExpr(CXXParenListInitExpr *E) {
-  ArrayRef<Expr *> InitExprs = E->getInitExprs();
-  FieldDecl *InitializedFieldInUnion = nullptr;
-  if (E->getType()->isUnionType()) {
-    auto *RD =
-        dyn_cast<CXXRecordDecl>(E->getType()->castAs<RecordType>()->getDecl());
-    for (FieldDecl *FD : RD->fields()) {
-      if (FD->isUnnamedBitfield())
-        continue;
-      InitializedFieldInUnion = FD;
-      break;
-    }
-  }
-
-  VisitCXXParenListOrInitListExpr(E, InitExprs, InitializedFieldInUnion,
+  VisitCXXParenListOrInitListExpr(E, E->getInitExprs(),
+                                  E->getInitializedFieldInUnion(),
                                   E->getArrayFiller());
 }
 
@@ -1654,10 +1658,18 @@ void AggExprEmitter::VisitCXXParenListOrInitListExpr(
   LValue DestLV = CGF.MakeAddrLValue(Dest.getAddress(), ExprToVisit->getType());
 
   // Handle initialization of an array.
-  if (ExprToVisit->getType()->isArrayType()) {
+  if (ExprToVisit->getType()->isConstantArrayType()) {
     auto AType = cast<llvm::ArrayType>(Dest.getAddress().getElementType());
     EmitArrayInit(Dest.getAddress(), AType, ExprToVisit->getType(), ExprToVisit,
                   InitExprs, ArrayFiller);
+    return;
+  } else if (ExprToVisit->getType()->isVariableArrayType()) {
+    // A variable array type that has an initializer can only do empty
+    // initialization. And because this feature is not exposed as an extension
+    // in C++, we can safely memset the array memory to zero.
+    assert(InitExprs.size() == 0 &&
+           "you can only use an empty initializer with VLAs");
+    CGF.EmitNullInitialization(Dest.getAddress(), ExprToVisit->getType());
     return;
   }
 
@@ -1724,7 +1736,7 @@ void AggExprEmitter::VisitCXXParenListOrInitListExpr(
       // Make sure that it's really an empty and not a failure of
       // semantic analysis.
       for (const auto *Field : record->fields())
-        assert(Field->isUnnamedBitfield() && "Only unnamed bitfields allowed");
+        assert((Field->isUnnamedBitfield() || Field->isAnonymousStructOrUnion()) && "Only unnamed bitfields or ananymous class allowed");
 #endif
       return;
     }

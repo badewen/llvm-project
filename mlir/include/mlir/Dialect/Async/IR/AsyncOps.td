@@ -106,7 +106,7 @@ def Async_ExecuteOp :
 
 def Async_FuncOp : Async_Op<"func",
     [CallableOpInterface, FunctionOpInterface,
-     IsolatedFromAbove, OpAsmOpInterface, Symbol]> {
+     IsolatedFromAbove, OpAsmOpInterface]> {
   let summary = "async function operation";
   let description = [{
     An async function is like a normal function, but supports non-blocking
@@ -167,6 +167,18 @@ def Async_FuncOp : Async_Op<"func",
     /// executed.
     ArrayRef<Type> getCallableResults() { return getFunctionType()
                                                     .getResults(); }
+
+    /// Returns the argument attributes for all callable region arguments or
+    /// null if there are none.
+    ::mlir::ArrayAttr getCallableArgAttrs() {
+      return getArgAttrs().value_or(nullptr);
+    }
+
+    /// Returns the result attributes for all callable region results or
+    /// null if there are none.
+    ::mlir::ArrayAttr getCallableResAttrs() {
+      return getResAttrs().value_or(nullptr);
+    }
 
     //===------------------------------------------------------------------===//
     // FunctionOpInterface Methods
@@ -259,6 +271,11 @@ def Async_CallOp : Async_Op<"call",
     CallInterfaceCallable getCallableForCallee() {
       return (*this)->getAttrOfType<SymbolRefAttr>("callee");
     }
+
+    /// Set the callee for this operation.
+    void setCalleeFromCallable(CallInterfaceCallable callee) {
+      (*this)->setAttr("callee", callee.get<SymbolRefAttr>());
+    }
   }];
 
   let assemblyFormat = [{
@@ -333,7 +350,7 @@ def Async_AwaitOp : Async_Op<"await"> {
   ];
 
   let extraClassDeclaration = [{
-    Optional<Type> getResultType() {
+    std::optional<Type> getResultType() {
       if (getResultTypes().empty()) return std::nullopt;
       return getResultTypes()[0];
     }

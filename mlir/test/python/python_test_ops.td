@@ -71,8 +71,9 @@ def InferResultsOp : TestOp<"infer_results_op", [InferTypeOpInterface]> {
 
   let extraClassDeclaration = [{
     static ::mlir::LogicalResult inferReturnTypes(
-      ::mlir::MLIRContext *context, ::llvm::Optional<::mlir::Location> location,
+      ::mlir::MLIRContext *context, ::std::optional<::mlir::Location> location,
       ::mlir::ValueRange operands, ::mlir::DictionaryAttr attributes,
+      ::mlir::OpaqueProperties,
       ::mlir::RegionRange regions,
       ::llvm::SmallVectorImpl<::mlir::Type> &inferredReturnTypes) {
       ::mlir::Builder b(context);

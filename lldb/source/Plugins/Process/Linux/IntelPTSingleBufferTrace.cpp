@@ -10,8 +10,8 @@
 #include "Plugins/Process/POSIX/ProcessPOSIXLog.h"
 #include "lldb/Utility/Status.h"
 #include "lldb/Utility/StreamString.h"
-#include "llvm/Support/Host.h"
 #include "llvm/Support/MemoryBuffer.h"
+#include "llvm/TargetParser/Host.h"
 #include <linux/perf_event.h>
 #include <sstream>
 #include <sys/syscall.h>
@@ -228,9 +228,11 @@ Expected<std::vector<uint8_t>> IntelPTSingleBufferTrace::GetIptTrace() {
   return m_perf_event.GetReadOnlyAuxBuffer();
 }
 
-Expected<IntelPTSingleBufferTrace> IntelPTSingleBufferTrace::Start(
-    const TraceIntelPTStartRequest &request, Optional<lldb::tid_t> tid,
-    Optional<cpu_id_t> cpu_id, bool disabled, Optional<int> cgroup_fd) {
+Expected<IntelPTSingleBufferTrace>
+IntelPTSingleBufferTrace::Start(const TraceIntelPTStartRequest &request,
+                                std::optional<lldb::tid_t> tid,
+                                std::optional<cpu_id_t> cpu_id, bool disabled,
+                                std::optional<int> cgroup_fd) {
 #ifndef PERF_ATTR_SIZE_VER5
   return createStringError(inconvertibleErrorCode(),
                            "Intel PT Linux perf event not supported");
@@ -248,7 +250,7 @@ Expected<IntelPTSingleBufferTrace> IntelPTSingleBufferTrace::Start(
         request.ipt_trace_size);
   }
   uint64_t page_size = getpagesize();
-  uint64_t aux_buffer_numpages = static_cast<uint64_t>(llvm::PowerOf2Floor(
+  uint64_t aux_buffer_numpages = static_cast<uint64_t>(llvm::bit_floor(
       (request.ipt_trace_size + page_size - 1) / page_size));
 
   Expected<perf_event_attr> attr = CreateIntelPTPerfEventConfiguration(

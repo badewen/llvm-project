@@ -17,9 +17,9 @@
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/Dialect/Tosa/IR/TosaOps.h"
 #include "mlir/Dialect/Tosa/Utils/ShapeUtils.h"
-#include "mlir/IR/BlockAndValueMapping.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/IRMapping.h"
 #include "mlir/IR/Matchers.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Transforms/DialectConversion.h"
@@ -218,9 +218,9 @@ void propagateShapesInRegion(Region &region) {
 
       ValueShapeRange range(op.getOperands(), operandShape);
       if (shapeInterface
-              .inferReturnTypeComponents(op.getContext(), op.getLoc(), range,
-                                         op.getAttrDictionary(),
-                                         op.getRegions(), returnedShapes)
+              .inferReturnTypeComponents(
+                  op.getContext(), op.getLoc(), range, op.getAttrDictionary(),
+                  op.getPropertiesStorage(), op.getRegions(), returnedShapes)
               .succeeded()) {
         for (auto it : llvm::zip(op.getResults(), returnedShapes)) {
           Value result = std::get<0>(it);

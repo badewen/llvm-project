@@ -21,6 +21,8 @@ def AddIntAttrs : NativeCodeCall<"addIntegerAttrs($_builder, $0, $1, $2)">;
 // Subtract two integer attributes and createa a new one with the result.
 def SubIntAttrs : NativeCodeCall<"subIntegerAttrs($_builder, $0, $1, $2)">;
 
+class cast<string type> : NativeCodeCall<"::mlir::cast<" # type # ">($0)">;
+
 //===----------------------------------------------------------------------===//
 // AddIOp
 //===----------------------------------------------------------------------===//
@@ -48,6 +50,27 @@ def AddISubConstantLHS :
           (Arith_SubIOp (ConstantLikeMatcher APIntAttr:$c0), $x),
           (ConstantLikeMatcher APIntAttr:$c1)),
         (Arith_SubIOp (Arith_ConstantOp (AddIntAttrs $res, $c0, $c1)), $x)>;
+
+def IsScalarOrSplatNegativeOne :
+    Constraint<And<[
+      CPred<"succeeded(getIntOrSplatIntValue($0))">,
+      CPred<"getIntOrSplatIntValue($0)->isAllOnes()">]>>;
+
+// addi(x, muli(y, -1)) -> subi(x, y)
+def AddIMulNegativeOneRhs :
+    Pat<(Arith_AddIOp
+           $x,
+           (Arith_MulIOp $y, (ConstantLikeMatcher AnyAttr:$c0))),
+        (Arith_SubIOp $x, $y),
+        [(IsScalarOrSplatNegativeOne $c0)]>;
+
+// addi(muli(x, -1), y) -> subi(y, x)
+def AddIMulNegativeOneLhs :
+    Pat<(Arith_AddIOp
+           (Arith_MulIOp $x, (ConstantLikeMatcher AnyAttr:$c0)),
+           $y),
+        (Arith_SubIOp $y, $x),
+        [(IsScalarOrSplatNegativeOne $c0)]>;
 
 //===----------------------------------------------------------------------===//
 // AddUIExtendedOp
@@ -126,7 +149,7 @@ def MulSIExtendedToMulI :
 def IsScalarOrSplatOne :
     Constraint<And<[
       CPred<"succeeded(getIntOrSplatIntValue($0))">,
-      CPred<"getIntOrSplatIntValue($0).value() == 1">]>>;
+      CPred<"*getIntOrSplatIntValue($0) == 1">]>>;
 
 // mulsi_extended(x, 1) -> [x, extsi(cmpi slt, x, 0)]
 def MulSIExtendedRHSOne :
@@ -163,6 +186,16 @@ def XOrINotCmpI :
           (Arith_CmpIOp $pred, $a, $b),
           (ConstantLikeMatcher ConstantAttr<I1Attr, "1">)),
         (Arith_CmpIOp (InvertPredicate $pred), $a, $b)>;
+
+// xor extui(x), extui(y) -> extui(xor(x,y))
+def XOrIOfExtUI :
+    Pat<(Arith_XOrIOp (Arith_ExtUIOp $x), (Arith_ExtUIOp $y)), (Arith_ExtUIOp (Arith_XOrIOp $x, $y)),
+      [(Constraint<CPred<"$0.getType() == $1.getType()">> $x, $y)]>;
+
+// xor extsi(x), extsi(y) -> extsi(xor(x,y))
+def XOrIOfExtSI :
+    Pat<(Arith_XOrIOp (Arith_ExtSIOp $x), (Arith_ExtSIOp $y)), (Arith_ExtSIOp (Arith_XOrIOp $x, $y)),
+      [(Constraint<CPred<"$0.getType() == $1.getType()">> $x, $y)]>;
 
 //===----------------------------------------------------------------------===//
 // CmpIOp
@@ -284,13 +317,27 @@ def TruncationMatchesShiftAmount :
     Constraint<And<[
       CPred<"succeeded(getIntOrSplatIntValue($2))">,
       CPred<"(getScalarOrElementWidth($0) - getScalarOrElementWidth($1)) == "
-              "getIntOrSplatIntValue($2).value()">]>>;
+              "*getIntOrSplatIntValue($2)">]>>;
+
+// trunci(extsi(x)) -> extsi(x), when only the sign-extension bits are truncated
+def TruncIExtSIToExtSI :
+    Pat<(Arith_TruncIOp:$tr (Arith_ExtSIOp:$ext $x)),
+        (Arith_ExtSIOp $x),
+        [(ValueWiderThan $ext, $tr),
+         (ValueWiderThan $tr, $x)]>;
+
+// trunci(extui(x)) -> extui(x), when only the zero-extension bits are truncated
+def TruncIExtUIToExtUI :
+    Pat<(Arith_TruncIOp:$tr (Arith_ExtUIOp:$ext $x)),
+        (Arith_ExtUIOp $x),
+        [(ValueWiderThan $ext, $tr),
+         (ValueWiderThan $tr, $x)]>;
 
 // trunci(shrsi(x, c)) -> trunci(shrui(x, c))
 def TruncIShrSIToTrunciShrUI :
     Pat<(Arith_TruncIOp:$tr
-          (Arith_ShRSIOp $x, (ConstantLikeMatcher AnyAttr:$c0))),
-        (Arith_TruncIOp (Arith_ShRUIOp $x, (Arith_ConstantOp $c0))),
+          (Arith_ShRSIOp $x, (ConstantLikeMatcher TypedAttrInterface:$c0))),
+        (Arith_TruncIOp (Arith_ShRUIOp $x, (Arith_ConstantOp (cast<"TypedAttr"> $c0)))),
         [(TruncationMatchesShiftAmount $x, $tr, $c0)]>;
 
 // trunci(shrui(mul(sext(x), sext(y)), c)) -> mulsi_extended(x, y)

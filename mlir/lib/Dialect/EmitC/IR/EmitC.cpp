@@ -59,6 +59,10 @@ LogicalResult ApplyOp::verify() {
   if (applicableOperatorStr != "&" && applicableOperatorStr != "*")
     return emitOpError("applicable operator is illegal");
 
+  Operation *op = getOperand().getDefiningOp();
+  if (op && dyn_cast<ConstantOp>(op))
+    return emitOpError("cannot apply to constant");
+
   return success();
 }
 
@@ -84,7 +88,7 @@ LogicalResult emitc::CallOp::verify() {
   if (getCallee().empty())
     return emitOpError("callee must not be empty");
 
-  if (Optional<ArrayAttr> argsAttr = getArgs()) {
+  if (std::optional<ArrayAttr> argsAttr = getArgs()) {
     for (Attribute arg : *argsAttr) {
       auto intAttr = arg.dyn_cast<IntegerAttr>();
       if (intAttr && intAttr.getType().isa<IndexType>()) {
@@ -102,7 +106,7 @@ LogicalResult emitc::CallOp::verify() {
     }
   }
 
-  if (Optional<ArrayAttr> templateArgsAttr = getTemplateArgs()) {
+  if (std::optional<ArrayAttr> templateArgsAttr = getTemplateArgs()) {
     for (Attribute tArg : *templateArgsAttr) {
       if (!tArg.isa<TypeAttr, IntegerAttr, FloatAttr, emitc::OpaqueAttr>())
         return emitOpError("template argument has invalid type");
@@ -121,7 +125,12 @@ LogicalResult emitc::ConstantOp::verify() {
   if (getValueAttr().isa<emitc::OpaqueAttr>())
     return success();
 
-  TypedAttr value = getValueAttr();
+  // Value must not be empty
+  StringAttr strAttr = getValueAttr().dyn_cast<StringAttr>();
+  if (strAttr && strAttr.getValue().empty())
+    return emitOpError() << "value must not be empty";
+
+  auto value = cast<TypedAttr>(getValueAttr());
   Type type = getType();
   if (!value.getType().isa<NoneType>() && type != value.getType())
     return emitOpError() << "requires attribute's type (" << value.getType()
@@ -129,8 +138,7 @@ LogicalResult emitc::ConstantOp::verify() {
   return success();
 }
 
-OpFoldResult emitc::ConstantOp::fold(ArrayRef<Attribute> operands) {
-  assert(operands.empty() && "constant has no operands");
+OpFoldResult emitc::ConstantOp::fold(FoldAdaptor adaptor) {
   return getValue();
 }
 
@@ -178,7 +186,7 @@ LogicalResult emitc::VariableOp::verify() {
   if (getValueAttr().isa<emitc::OpaqueAttr>())
     return success();
 
-  TypedAttr value = getValueAttr();
+  auto value = cast<TypedAttr>(getValueAttr());
   Type type = getType();
   if (!value.getType().isa<NoneType>() && type != value.getType())
     return emitOpError() << "requires attribute's type (" << value.getType()

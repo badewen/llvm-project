@@ -10,6 +10,7 @@
 
 #include <cinttypes>
 
+#include <optional>
 #include <vector>
 
 #include "lldb/Core/Module.h"
@@ -798,15 +799,15 @@ void UpdateValueTypeFromLocationDescription(Log *log, const DWARFUnit *dwarf_cu,
 /// \param so_addr out parameter, will be set to load address or section offset
 /// \param check_sectionoffset bool which determines if having a section offset
 ///                            but not a load address is considerd a success
-/// \returns llvm::Optional containing the load address if resolving and getting
+/// \returns std::optional containing the load address if resolving and getting
 ///          the load address succeed or an empty Optinal otherwise. If
 ///          check_sectionoffset is true we consider LLDB_INVALID_ADDRESS a
 ///          success if so_addr.IsSectionOffset() is true.
-static llvm::Optional<lldb::addr_t>
+static std::optional<lldb::addr_t>
 ResolveLoadAddress(ExecutionContext *exe_ctx, lldb::ModuleSP &module_sp,
-                          Status *error_ptr, const char *dw_op_type,
-                          lldb::addr_t file_addr, Address &so_addr,
-                          bool check_sectionoffset = false) {
+                   Status *error_ptr, const char *dw_op_type,
+                   lldb::addr_t file_addr, Address &so_addr,
+                   bool check_sectionoffset = false) {
   if (!module_sp) {
     if (error_ptr)
       error_ptr->SetErrorStringWithFormat(
@@ -1139,9 +1140,9 @@ bool DWARFExpression::Evaluate(
           uint8_t addr_bytes[8];
           Status error;
 
-          if (exe_ctx->GetTargetRef().ReadMemory(
-                  so_addr, &addr_bytes, size, error,
-                  /*force_live_memory=*/false) == size) {
+          if (target &&
+              target->ReadMemory(so_addr, &addr_bytes, size, error,
+                                 /*force_live_memory=*/false) == size) {
             ObjectFile *objfile = module_sp->GetObjectFile();
 
             stack.back().GetScalar() = DerefSizeExtractDataHelper(
@@ -1435,8 +1436,12 @@ bool DWARFExpression::Evaluate(
           return false;
         } else {
           stack.pop_back();
-          stack.back() =
-              stack.back().ResolveValue(exe_ctx) / tmp.ResolveValue(exe_ctx);
+          Scalar divisor, dividend;
+          divisor = tmp.ResolveValue(exe_ctx);
+          dividend = stack.back().ResolveValue(exe_ctx);
+          divisor.MakeSigned();
+          dividend.MakeSigned();
+          stack.back() = dividend / divisor;
           if (!stack.back().ResolveValue(exe_ctx).IsValid()) {
             if (error_ptr)
               error_ptr->SetErrorString("Divide failed.");

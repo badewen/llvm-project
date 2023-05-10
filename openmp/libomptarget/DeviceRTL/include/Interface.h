@@ -260,6 +260,10 @@ int32_t __kmpc_master(IdentTy *Loc, int32_t TId);
 
 void __kmpc_end_master(IdentTy *Loc, int32_t TId);
 
+int32_t __kmpc_masked(IdentTy *Loc, int32_t TId, int32_t Filter);
+
+void __kmpc_end_masked(IdentTy *Loc, int32_t TId);
+
 int32_t __kmpc_single(IdentTy *Loc, int32_t TId);
 
 void __kmpc_end_single(IdentTy *Loc, int32_t TId);
@@ -302,9 +306,9 @@ uint16_t __kmpc_parallel_level(IdentTy *Loc, uint32_t);
 /// Tasking
 ///
 ///{
-TaskDescriptorTy *__kmpc_omp_task_alloc(IdentTy *, uint32_t, int32_t,
-                                        uint32_t TaskSizeInclPrivateValues,
-                                        uint32_t SharedValuesSize,
+TaskDescriptorTy *__kmpc_omp_task_alloc(IdentTy *, int32_t, int32_t,
+                                        size_t TaskSizeInclPrivateValues,
+                                        size_t SharedValuesSize,
                                         TaskFnTy TaskFn);
 
 int32_t __kmpc_omp_task(IdentTy *Loc, uint32_t TId,

@@ -3,17 +3,18 @@ set(exegesis_includes
   )
 
 set(LLVM_LINK_COMPONENTS
+  CodeGenTypes
   MC
   MCParser
   Object
   Support
   Symbolize
+  TargetParser
   )
 
 set(exegesis_sources
   BenchmarkRunnerTest.cpp
   ClusteringTest.cpp
-  PerfHelperTest.cpp
   ProgressMeterTest.cpp
   RegisterValueTest.cpp
   )

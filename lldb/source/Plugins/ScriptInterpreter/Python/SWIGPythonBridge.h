@@ -9,6 +9,7 @@
 #ifndef LLDB_PLUGINS_SCRIPTINTERPRETER_PYTHON_SWIGPYTHONBRIDGE_H
 #define LLDB_PLUGINS_SCRIPTINTERPRETER_PYTHON_SWIGPYTHONBRIDGE_H
 
+#include <optional>
 #include <string>
 
 #include "lldb/Host/Config.h"
@@ -76,6 +77,10 @@ PythonObject ToSWIGWrapper(lldb::ExecutionContextRefSP ctx_sp);
 PythonObject ToSWIGWrapper(const TypeSummaryOptions &summary_options);
 PythonObject ToSWIGWrapper(const SymbolContext &sym_ctx);
 
+PythonObject ToSWIGWrapper(lldb::ProcessAttachInfoSP attach_info_sp);
+PythonObject ToSWIGWrapper(lldb::ProcessLaunchInfoSP launch_info_sp);
+PythonObject ToSWIGWrapper(lldb::DataExtractorSP data_extractor_sp);
+
 PythonObject ToSWIGWrapper(std::unique_ptr<lldb::SBValue> value_sb);
 PythonObject ToSWIGWrapper(std::unique_ptr<lldb::SBStream> stream_sb);
 PythonObject ToSWIGWrapper(std::unique_ptr<lldb::SBStructuredData> data_sb);
@@ -87,6 +92,9 @@ python::ScopedPythonObject<lldb::SBEvent> ToSWIGWrapper(Event *event);
 } // namespace python
 
 void *LLDBSWIGPython_CastPyObjectToSBData(PyObject *data);
+void *LLDBSWIGPython_CastPyObjectToSBBreakpoint(PyObject *data);
+void *LLDBSWIGPython_CastPyObjectToSBAttachInfo(PyObject *data);
+void *LLDBSWIGPython_CastPyObjectToSBLaunchInfo(PyObject *data);
 void *LLDBSWIGPython_CastPyObjectToSBError(PyObject *data);
 void *LLDBSWIGPython_CastPyObjectToSBValue(PyObject *data);
 void *LLDBSWIGPython_CastPyObjectToSBMemoryRegionInfo(PyObject *data);
@@ -95,14 +103,10 @@ void *LLDBSWIGPython_CastPyObjectToSBMemoryRegionInfo(PyObject *data);
 // Although these are scripting-language specific, their definition depends on
 // the public API.
 
-python::PythonObject LLDBSwigPythonCreateScriptedProcess(
+python::PythonObject LLDBSwigPythonCreateScriptedObject(
     const char *python_class_name, const char *session_dictionary_name,
-    const lldb::TargetSP &target_sp, const StructuredDataImpl &args_impl,
-    std::string &error_string);
-
-python::PythonObject LLDBSwigPythonCreateScriptedThread(
-    const char *python_class_name, const char *session_dictionary_name,
-    const lldb::ProcessSP &process_sp, const StructuredDataImpl &args_impl,
+    lldb::ExecutionContextRefSP exe_ctx_sp,
+    const lldb_private::StructuredDataImpl &args_impl,
     std::string &error_string);
 
 llvm::Expected<bool> LLDBSwigPythonBreakpointCallbackFunction(
@@ -143,6 +147,11 @@ python::PythonObject LLDBSwigPythonCreateScriptedThreadPlan(
 
 bool LLDBSWIGPythonCallThreadPlan(void *implementor, const char *method_name,
                                   lldb_private::Event *event_sp,
+                                  bool &got_error);
+                                  
+bool LLDBSWIGPythonCallThreadPlan(void *implementor, 
+                                  const char *method_name,
+                                  lldb_private::Stream *stream,
                                   bool &got_error);
 
 python::PythonObject LLDBSwigPythonCreateScriptedBreakpointResolver(
@@ -211,7 +220,7 @@ bool LLDBSWIGPythonRunScriptKeywordProcess(const char *python_function_name,
                                            const lldb::ProcessSP &process,
                                            std::string &output);
 
-llvm::Optional<std::string>
+std::optional<std::string>
 LLDBSWIGPythonRunScriptKeywordThread(const char *python_function_name,
                                      const char *session_dictionary_name,
                                      lldb::ThreadSP thread);
@@ -221,7 +230,7 @@ bool LLDBSWIGPythonRunScriptKeywordTarget(const char *python_function_name,
                                           const lldb::TargetSP &target,
                                           std::string &output);
 
-llvm::Optional<std::string>
+std::optional<std::string>
 LLDBSWIGPythonRunScriptKeywordFrame(const char *python_function_name,
                                     const char *session_dictionary_name,
                                     lldb::StackFrameSP frame);

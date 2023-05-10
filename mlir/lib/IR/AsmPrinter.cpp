@@ -25,7 +25,6 @@
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/OpImplementation.h"
 #include "mlir/IR/Operation.h"
-#include "mlir/IR/SubElementInterfaces.h"
 #include "mlir/IR/Verifier.h"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/DenseMap.h"
@@ -45,6 +44,7 @@
 #include "llvm/Support/SaveAndRestore.h"
 #include "llvm/Support/Threading.h"
 
+#include <optional>
 #include <tuple>
 
 using namespace mlir;
@@ -183,8 +183,9 @@ void mlir::registerAsmPrinterCLOptions() {
 /// Initialize the printing flags with default supplied by the cl::opts above.
 OpPrintingFlags::OpPrintingFlags()
     : printDebugInfoFlag(false), printDebugInfoPrettyFormFlag(false),
-      printGenericOpFormFlag(false), assumeVerifiedFlag(false),
-      printLocalScope(false), printValueUsersFlag(false) {
+      printGenericOpFormFlag(false), skipRegionsFlag(false),
+      assumeVerifiedFlag(false), printLocalScope(false),
+      printValueUsersFlag(false) {
   // Initialize based upon command line options, if they are available.
   if (!clOptions.isConstructed())
     return;
@@ -223,6 +224,12 @@ OpPrintingFlags &OpPrintingFlags::printGenericOpForm() {
   return *this;
 }
 
+/// Always skip Regions.
+OpPrintingFlags &OpPrintingFlags::skipRegions(bool skip) {
+  skipRegionsFlag = skip;
+  return *this;
+}
+
 /// Do not verify the operation when using custom operation printers.
 OpPrintingFlags &OpPrintingFlags::assumeVerified() {
   assumeVerifiedFlag = true;
@@ -251,7 +258,7 @@ bool OpPrintingFlags::shouldElideElementsAttr(ElementsAttr attr) const {
 }
 
 /// Return the size limit for printing large ElementsAttr.
-Optional<int64_t> OpPrintingFlags::getLargeElementsAttrLimit() const {
+std::optional<int64_t> OpPrintingFlags::getLargeElementsAttrLimit() const {
   return elementsAttrElementLimit;
 }
 
@@ -269,6 +276,9 @@ bool OpPrintingFlags::shouldPrintDebugInfoPrettyForm() const {
 bool OpPrintingFlags::shouldPrintGenericOpForm() const {
   return printGenericOpFormFlag;
 }
+
+/// Return if Region should be skipped.
+bool OpPrintingFlags::shouldSkipRegions() const { return skipRegionsFlag; }
 
 /// Return if operation verification should be skipped.
 bool OpPrintingFlags::shouldAssumeVerified() const {
@@ -531,7 +541,7 @@ private:
 
     /// The alias for the attribute or type, or std::nullopt if the value has no
     /// alias.
-    Optional<StringRef> alias;
+    std::optional<StringRef> alias;
     /// The alias depth of this attribute or type, i.e. an indication of the
     /// relative ordering of when to print this alias.
     unsigned aliasDepth : 30;
@@ -602,12 +612,8 @@ public:
 
     // If requested, always print the generic form.
     if (!printerFlags.shouldPrintGenericOpForm()) {
-      // Check to see if this is a known operation.  If so, use the registered
-      // custom printer hook.
-      if (auto opInfo = op->getRegisteredInfo()) {
-        opInfo->printAssembly(op, *this, /*defaultDialect=*/"");
-        return;
-      }
+      op->getName().printAssembly(op, *this, /*defaultDialect=*/"");
+      return;
     }
 
     // Otherwise print with the generic assembly form.
@@ -618,9 +624,11 @@ private:
   /// Print the given operation in the generic form.
   void printGenericOp(Operation *op, bool printOpName = true) override {
     // Consider nested operations for aliases.
-    for (Region &region : op->getRegions())
-      printRegion(region, /*printEntryBlockArgs=*/true,
-                  /*printBlockTerminators=*/true);
+    if (!printerFlags.shouldSkipRegions()) {
+      for (Region &region : op->getRegions())
+        printRegion(region, /*printEntryBlockArgs=*/true,
+                    /*printBlockTerminators=*/true);
+    }
 
     // Visit all the types used in the operation.
     for (Type type : op->getOperandTypes())
@@ -669,6 +677,10 @@ private:
                    bool printEmptyBlock = false) override {
     if (region.empty())
       return;
+    if (printerFlags.shouldSkipRegions()) {
+      os << "{...}";
+      return;
+    }
 
     auto *entryBlock = &region.front();
     print(entryBlock, printEntryBlockArgs, printBlockTerminators);
@@ -844,13 +856,11 @@ private:
     }
 
     // For most builtin types, we can simply walk the sub elements.
-    if (auto subElementInterface = dyn_cast<SubElementTypeInterface>(type)) {
-      auto visitFn = [&](auto element) {
-        if (element)
-          (void)printAlias(element);
-      };
-      subElementInterface.walkImmediateSubElements(visitFn, visitFn);
-    }
+    auto visitFn = [&](auto element) {
+      if (element)
+        (void)printAlias(element);
+    };
+    type.walkImmediateSubElements(visitFn, visitFn);
   }
 
   /// Consider the given type to be printed for an alias.
@@ -1217,7 +1227,7 @@ private:
   /// 'lookupResultNo'. 'lookupResultNo' is only filled in if the result group
   /// has more than 1 result.
   void getResultIDAndNumber(OpResult result, Value &lookupValue,
-                            Optional<int> &lookupResultNo) const;
+                            std::optional<int> &lookupResultNo) const;
 
   /// Set a special value name for the given value.
   void setValueName(Value value, StringRef name);
@@ -1329,7 +1339,7 @@ void SSANameState::printValueID(Value value, bool printResultNo,
     return;
   }
 
-  Optional<int> resultNo;
+  std::optional<int> resultNo;
   auto lookupValue = value;
 
   // If this is an operation result, collect the head lookup value of the result
@@ -1353,13 +1363,13 @@ void SSANameState::printValueID(Value value, bool printResultNo,
   }
 
   if (resultNo && printResultNo)
-    stream << '#' << resultNo;
+    stream << '#' << *resultNo;
 }
 
 void SSANameState::printOperationID(Operation *op, raw_ostream &stream) const {
   auto it = operationIDs.find(op);
   if (it == operationIDs.end()) {
-    stream << "<<UNKOWN OPERATION>>";
+    stream << "<<UNKNOWN OPERATION>>";
   } else {
     stream << '%' << it->second;
   }
@@ -1517,8 +1527,9 @@ void SSANameState::numberValuesInOp(Operation &op) {
   }
 }
 
-void SSANameState::getResultIDAndNumber(OpResult result, Value &lookupValue,
-                                        Optional<int> &lookupResultNo) const {
+void SSANameState::getResultIDAndNumber(
+    OpResult result, Value &lookupValue,
+    std::optional<int> &lookupResultNo) const {
   Operation *owner = result.getOwner();
   if (owner->getNumResults() == 1)
     return;
@@ -2047,7 +2058,10 @@ static void printKeywordOrString(StringRef keyword, raw_ostream &os) {
 /// represented as a string prefixed with '@'. The reference is surrounded with
 /// ""'s and escaped if it has any special or non-printable characters in it.
 static void printSymbolReference(StringRef symbolRef, raw_ostream &os) {
-  assert(!symbolRef.empty() && "expected valid symbol reference");
+  if (symbolRef.empty()) {
+    os << "@<<INVALID EMPTY SYMBOL>>";
+    return;
+  }
   os << '@';
   printKeywordOrString(symbolRef, os);
 }
@@ -2412,6 +2426,9 @@ void AsmPrinter::Impl::printTypeImpl(Type type) {
       .Case<IndexType>([&](Type) { os << "index"; })
       .Case<Float8E5M2Type>([&](Type) { os << "f8E5M2"; })
       .Case<Float8E4M3FNType>([&](Type) { os << "f8E4M3FN"; })
+      .Case<Float8E5M2FNUZType>([&](Type) { os << "f8E5M2FNUZ"; })
+      .Case<Float8E4M3FNUZType>([&](Type) { os << "f8E4M3FNUZ"; })
+      .Case<Float8E4M3B11FNUZType>([&](Type) { os << "f8E4M3B11FNUZ"; })
       .Case<BFloat16Type>([&](Type) { os << "bf16"; })
       .Case<Float16Type>([&](Type) { os << "f16"; })
       .Case<Float32Type>([&](Type) { os << "f32"; })
@@ -2558,7 +2575,6 @@ void AsmPrinter::Impl::printOptionalAttrDict(ArrayRef<NamedAttribute> attrs,
   if (!filteredAttrs.empty())
     printFilteredAttributesFn(filteredAttrs);
 }
-
 void AsmPrinter::Impl::printNamedAttribute(NamedAttribute attr) {
   // Print the name without quotes if possible.
   ::printKeywordOrString(attr.getName().strref(), os);
@@ -3274,9 +3290,9 @@ void OperationPrinter::printValueUsers(Value value) {
   // One value might be used as the operand of an operation more than once.
   // Only print the operations results once in that case.
   SmallPtrSet<Operation *, 1> userSet;
-  for (auto &indexedUser : enumerate(value.getUsers())) {
-    if (userSet.insert(indexedUser.value()).second)
-      printUserIDs(indexedUser.value(), indexedUser.index());
+  for (auto [index, user] : enumerate(value.getUsers())) {
+    if (userSet.insert(user).second)
+      printUserIDs(user, index);
   }
 }
 
@@ -3338,6 +3354,13 @@ void OperationPrinter::printGenericOp(Operation *op, bool printOpName) {
     os << ']';
   }
 
+  // Print the properties.
+  if (Attribute prop = op->getPropertiesAsAttribute()) {
+    os << " <";
+    Impl::printAttribute(prop);
+    os << '>';
+  }
+
   // Print regions.
   if (op->getNumRegions() != 0) {
     os << " (";
@@ -3348,7 +3371,7 @@ void OperationPrinter::printGenericOp(Operation *op, bool printOpName) {
     os << ')';
   }
 
-  auto attrs = op->getAttrs();
+  auto attrs = op->getDiscardableAttrs();
   printOptionalAttrDict(attrs);
 
   // Print the type signature of the operation.
@@ -3463,6 +3486,10 @@ void OperationPrinter::printSuccessorAndUseList(Block *successor,
 void OperationPrinter::printRegion(Region &region, bool printEntryBlockArgs,
                                    bool printBlockTerminators,
                                    bool printEmptyBlock) {
+  if (printerFlags.shouldSkipRegions()) {
+    os << "{...}";
+    return;
+  }
   os << "{" << newLine;
   if (!region.empty()) {
     auto restoreDefaultDialect =
@@ -3488,6 +3515,10 @@ void OperationPrinter::printRegion(Region &region, bool printEntryBlockArgs,
 
 void OperationPrinter::printAffineMapOfSSAIds(AffineMapAttr mapAttr,
                                               ValueRange operands) {
+  if (!mapAttr) {
+    os << "<<NULL AFFINE MAP>>";
+    return;
+  }
   AffineMap map = mapAttr.getValue();
   unsigned numDims = map.getNumDims();
   auto printValueName = [&](unsigned pos, bool isSymbol) {
@@ -3556,7 +3587,10 @@ void Type::print(raw_ostream &os, AsmState &state) const {
   AsmPrinter::Impl(os, state.getImpl()).printType(*this);
 }
 
-void Type::dump() const { print(llvm::errs()); }
+void Type::dump() const {
+  print(llvm::errs());
+  llvm::errs() << "\n";
+}
 
 void AffineMap::dump() const {
   print(llvm::errs());
@@ -3639,10 +3673,7 @@ void Value::printAsOperand(raw_ostream &os, AsmState &state) {
                                                  os);
 }
 
-void Operation::print(raw_ostream &os, const OpPrintingFlags &printerFlags) {
-  // Find the operation to number from based upon the provided flags.
-  Operation *op = this;
-  bool shouldUseLocalScope = printerFlags.shouldUseLocalScope();
+static Operation *findParent(Operation *op, bool shouldUseLocalScope) {
   do {
     // If we are printing local scope, stop at the first operation that is
     // isolated from above.
@@ -3655,7 +3686,28 @@ void Operation::print(raw_ostream &os, const OpPrintingFlags &printerFlags) {
       break;
     op = parentOp;
   } while (true);
+  return op;
+}
 
+void Value::printAsOperand(raw_ostream &os, const OpPrintingFlags &flags) {
+  Operation *op;
+  if (auto result = dyn_cast<OpResult>()) {
+    op = result.getOwner();
+  } else {
+    op = cast<BlockArgument>().getOwner()->getParentOp();
+    if (!op) {
+      os << "<<UNKNOWN SSA VALUE>>";
+      return;
+    }
+  }
+  op = findParent(op, flags.shouldUseLocalScope());
+  AsmState state(op, flags);
+  printAsOperand(os, state);
+}
+
+void Operation::print(raw_ostream &os, const OpPrintingFlags &printerFlags) {
+  // Find the operation to number from based upon the provided flags.
+  Operation *op = findParent(this, printerFlags.shouldUseLocalScope());
   AsmState state(op, printerFlags);
   print(os, state);
 }

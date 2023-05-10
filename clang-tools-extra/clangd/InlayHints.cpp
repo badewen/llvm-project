@@ -18,6 +18,7 @@
 #include "clang/Basic/Builtins.h"
 #include "clang/Basic/SourceManager.h"
 #include "llvm/ADT/ScopeExit.h"
+#include <optional>
 
 namespace clang {
 namespace clangd {
@@ -218,6 +219,13 @@ public:
     StructuredBindingPolicy.PrintCanonicalTypes = true;
   }
 
+  bool VisitTypeLoc(TypeLoc TL) {
+    if (const auto *DT = llvm::dyn_cast<DecltypeType>(TL.getType()))
+      if (QualType UT = DT->getUnderlyingType(); !UT->isDependentType())
+        addTypeHint(TL.getSourceRange(), UT, ": ");
+    return true;
+  }
+
   bool VisitCXXConstructExpr(CXXConstructExpr *E) {
     // Weed out constructor calls that don't look like a function call with
     // an argument list, by checking the validity of getParenOrBraceRange().
@@ -296,8 +304,8 @@ public:
       return true;
     }
 
-    if (D->getType()->getContainedAutoType()) {
-      if (!D->getType()->isDependentType()) {
+    if (auto *AT = D->getType()->getContainedAutoType()) {
+      if (AT->isDeduced() && !D->getType()->isDependentType()) {
         // Our current approach is to place the hint on the variable
         // and accordingly print the full type
         // (e.g. for `const auto& x = 42`, print `const int&`).
@@ -508,8 +516,8 @@ private:
   // at the end.
   bool isPrecededByParamNameComment(const Expr *E, StringRef ParamName) {
     auto &SM = AST.getSourceManager();
-    auto ExprStartLoc = SM.getTopMacroCallerLoc(E->getBeginLoc());
-    auto Decomposed = SM.getDecomposedLoc(ExprStartLoc);
+    auto FileLoc = SM.getFileLoc(E->getBeginLoc());
+    auto Decomposed = SM.getDecomposedLoc(FileLoc);
     if (Decomposed.first != MainFileID)
       return false;
 
@@ -640,7 +648,7 @@ private:
   }
 
   // Get the range of the main file that *exactly* corresponds to R.
-  llvm::Optional<Range> getHintRange(SourceRange R) {
+  std::optional<Range> getHintRange(SourceRange R) {
     const auto &SM = AST.getSourceManager();
     auto Spelled = Tokens.spelledForExpanded(Tokens.expandedTokens(R));
     // TokenBuffer will return null if e.g. R corresponds to only part of a
@@ -655,7 +663,22 @@ private:
                  sourceLocToPosition(SM, Spelled->back().endLocation())};
   }
 
+  static bool shouldPrintCanonicalType(QualType QT) {
+    // The sugared type is more useful in some cases, and the canonical
+    // type in other cases. For now, prefer the sugared type unless
+    // we are printing `decltype(expr)`. This could be refined further
+    // (see https://github.com/clangd/clangd/issues/1298).
+    if (QT->isDecltypeType())
+      return true;
+    if (const AutoType *AT = QT->getContainedAutoType())
+      if (!AT->getDeducedType().isNull() &&
+          AT->getDeducedType()->isDecltypeType())
+        return true;
+    return false;
+  }
+
   void addTypeHint(SourceRange R, QualType T, llvm::StringRef Prefix) {
+    TypeHintPolicy.PrintCanonicalTypes = shouldPrintCanonicalType(T);
     addTypeHint(R, T, Prefix, TypeHintPolicy);
   }
 
@@ -665,7 +688,8 @@ private:
       return;
 
     std::string TypeName = T.getAsString(Policy);
-    if (TypeName.length() < TypeNameLimit)
+    if (Cfg.InlayHints.TypeNameLimit == 0 ||
+        TypeName.length() < Cfg.InlayHints.TypeNameLimit)
       addInlayHint(R, HintSide::Right, InlayHintKind::Type, Prefix, TypeName,
                    /*Suffix=*/"");
   }
@@ -691,8 +715,6 @@ private:
   // the policies are initialized for more details.)
   PrintingPolicy TypeHintPolicy;
   PrintingPolicy StructuredBindingPolicy;
-
-  static const size_t TypeNameLimit = 32;
 };
 
 } // namespace

@@ -149,7 +149,7 @@ static void updateSupportedARMFeatures(const ARMAttributeParser &attributes) {
       attributes.getAttributeValue(ARMBuildAttrs::CPU_arch);
   if (!attr)
     return;
-  auto arch = attr.value();
+  auto arch = *attr;
   switch (arch) {
   case ARMBuildAttrs::Pre_v4:
   case ARMBuildAttrs::v4:
@@ -194,6 +194,29 @@ std::optional<MemoryBufferRef> elf::readFile(StringRef path) {
   // This is useful when you are dealing with files created by --reproduce.
   if (!config->chroot.empty() && path.startswith("/"))
     path = saver().save(config->chroot + path);
+
+  bool remapped = false;
+  auto it = config->remapInputs.find(path);
+  if (it != config->remapInputs.end()) {
+    path = it->second;
+    remapped = true;
+  } else {
+    for (const auto &[pat, toFile] : config->remapInputsWildcards) {
+      if (pat.match(path)) {
+        path = toFile;
+        remapped = true;
+        break;
+      }
+    }
+  }
+  if (remapped) {
+    // Use /dev/null to indicate an input file that should be ignored. Change
+    // the path to NUL on Windows.
+#ifdef _WIN32
+    if (path == "/dev/null")
+      path = "NUL";
+#endif
+  }
 
   log(path);
   config->dependencyFiles.insert(llvm::CachedHashString(path));
@@ -1317,7 +1340,7 @@ static uint64_t getAlignment(ArrayRef<typename ELFT::Shdr> sections,
                              const typename ELFT::Sym &sym) {
   uint64_t ret = UINT64_MAX;
   if (sym.st_value)
-    ret = 1ULL << countTrailingZeros((uint64_t)sym.st_value);
+    ret = 1ULL << llvm::countr_zero((uint64_t)sym.st_value);
   if (0 < sym.st_shndx && sym.st_shndx < sections.size())
     ret = std::min<uint64_t>(ret, sections[sym.st_shndx].sh_addralign);
   return (ret > UINT32_MAX) ? 0 : ret;
@@ -1706,9 +1729,9 @@ void BinaryFile::parse() {
   // user programs can access blobs by name. Non-alphanumeric
   // characters in a filename are replaced with underscore.
   std::string s = "_binary_" + mb.getBufferIdentifier().str();
-  for (size_t i = 0; i < s.size(); ++i)
-    if (!isAlnum(s[i]))
-      s[i] = '_';
+  for (char &c : s)
+    if (!isAlnum(c))
+      c = '_';
 
   llvm::StringSaver &saver = lld::saver();
 
@@ -1773,9 +1796,7 @@ bool InputFile::shouldExtractForCommon(StringRef name) {
 }
 
 std::string elf::replaceThinLTOSuffix(StringRef path) {
-  StringRef suffix = config->thinLTOObjectSuffixReplace.first;
-  StringRef repl = config->thinLTOObjectSuffixReplace.second;
-
+  auto [suffix, repl] = config->thinLTOObjectSuffixReplace;
   if (path.consume_back(suffix))
     return (path + repl).str();
   return std::string(path);

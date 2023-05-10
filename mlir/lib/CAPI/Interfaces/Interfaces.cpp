@@ -1,3 +1,5 @@
+
+
 //===- Interfaces.cpp - C Interface for MLIR Interfaces -------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
@@ -13,12 +15,13 @@
 #include "mlir/CAPI/Wrap.h"
 #include "mlir/Interfaces/InferTypeOpInterface.h"
 #include "llvm/ADT/ScopeExit.h"
+#include <optional>
 
 using namespace mlir;
 
 bool mlirOperationImplementsInterface(MlirOperation operation,
                                       MlirTypeID interfaceTypeID) {
-  Optional<RegisteredOperationName> info =
+  std::optional<RegisteredOperationName> info =
       unwrap(operation)->getRegisteredInfo();
   return info && info->hasInterface(unwrap(interfaceTypeID));
 }
@@ -26,7 +29,7 @@ bool mlirOperationImplementsInterface(MlirOperation operation,
 bool mlirOperationImplementsInterfaceStatic(MlirStringRef operationName,
                                             MlirContext context,
                                             MlirTypeID interfaceTypeID) {
-  Optional<RegisteredOperationName> info = RegisteredOperationName::lookup(
+  std::optional<RegisteredOperationName> info = RegisteredOperationName::lookup(
       StringRef(operationName.data, operationName.length), unwrap(context));
   return info && info->hasInterface(unwrap(interfaceTypeID));
 }
@@ -38,15 +41,15 @@ MlirTypeID mlirInferTypeOpInterfaceTypeID() {
 MlirLogicalResult mlirInferTypeOpInterfaceInferReturnTypes(
     MlirStringRef opName, MlirContext context, MlirLocation location,
     intptr_t nOperands, MlirValue *operands, MlirAttribute attributes,
-    intptr_t nRegions, MlirRegion *regions, MlirTypesCallback callback,
-    void *userData) {
+    void *properties, intptr_t nRegions, MlirRegion *regions,
+    MlirTypesCallback callback, void *userData) {
   StringRef name(opName.data, opName.length);
-  Optional<RegisteredOperationName> info =
+  std::optional<RegisteredOperationName> info =
       RegisteredOperationName::lookup(name, unwrap(context));
   if (!info)
     return mlirLogicalResultFailure();
 
-  llvm::Optional<Location> maybeLocation;
+  std::optional<Location> maybeLocation;
   if (!mlirLocationIsNull(location))
     maybeLocation = unwrap(location);
   SmallVector<Value> unwrappedOperands;
@@ -71,7 +74,7 @@ MlirLogicalResult mlirInferTypeOpInterfaceInferReturnTypes(
   SmallVector<Type> inferredTypes;
   if (failed(info->getInterface<InferTypeOpInterface>()->inferReturnTypes(
           unwrap(context), maybeLocation, unwrappedOperands, attributeDict,
-          unwrappedRegions, inferredTypes)))
+          properties, unwrappedRegions, inferredTypes)))
     return mlirLogicalResultFailure();
 
   SmallVector<MlirType> wrappedInferredTypes;

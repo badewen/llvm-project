@@ -1,14 +1,12 @@
 set(LLVM_LINK_COMPONENTS
+  BinaryFormat
   DebugInfoCodeView
   DebugInfoDWARF
   Demangle
   Object
-  BinaryFormat
   Option
   Support
-  DebugInfoCodeView
-  DebugInfoMSF
-  DebugInfoPDB
+  TargetParser
   )
 
 set(LLVM_TARGET_DEFINITIONS Opts.td)

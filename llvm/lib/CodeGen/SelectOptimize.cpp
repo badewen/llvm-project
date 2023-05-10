@@ -98,15 +98,15 @@ namespace {
 
 class SelectOptimize : public FunctionPass {
   const TargetMachine *TM = nullptr;
-  const TargetSubtargetInfo *TSI;
+  const TargetSubtargetInfo *TSI = nullptr;
   const TargetLowering *TLI = nullptr;
   const TargetTransformInfo *TTI = nullptr;
-  const LoopInfo *LI;
-  DominatorTree *DT;
+  const LoopInfo *LI = nullptr;
+  DominatorTree *DT = nullptr;
   std::unique_ptr<BlockFrequencyInfo> BFI;
   std::unique_ptr<BranchProbabilityInfo> BPI;
-  ProfileSummaryInfo *PSI;
-  OptimizationRemarkEmitter *ORE;
+  ProfileSummaryInfo *PSI = nullptr;
+  OptimizationRemarkEmitter *ORE = nullptr;
   TargetSchedModel TSchedModel;
 
 public:
@@ -921,8 +921,8 @@ bool SelectOptimize::computeLoopCosts(
           EmitAndPrintRemark(ORE, ORmissL);
           return false;
         }
-        IPredCost += Scaled64::get(ILatency.value());
-        INonPredCost += Scaled64::get(ILatency.value());
+        IPredCost += Scaled64::get(*ILatency);
+        INonPredCost += Scaled64::get(*ILatency);
 
         // For a select that can be converted to branch,
         // compute its cost as a branch (non-predicated cost).

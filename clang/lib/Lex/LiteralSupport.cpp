@@ -263,7 +263,8 @@ static unsigned ProcessCharEscape(const char *ThisTokBegin,
         ThisTokBuf++;
         continue;
       }
-      if (ResultChar & 0x020000000)
+      // Check if one of the top three bits is set before shifting them out.
+      if (ResultChar & 0xE0000000)
         Overflow = true;
 
       ResultChar <<= 3;
@@ -311,7 +312,7 @@ static unsigned ProcessCharEscape(const char *ThisTokBegin,
           << tok::r_brace;
     else if (!HadError) {
       Diag(Diags, Features, Loc, ThisTokBegin, EscapeBegin, ThisTokBuf,
-           Features.CPlusPlus2b ? diag::warn_cxx2b_delimited_escape_sequence
+           Features.CPlusPlus23 ? diag::warn_cxx23_delimited_escape_sequence
                                 : diag::ext_delimited_escape_sequence)
           << /*delimited*/ 0 << (Features.CPlusPlus ? 1 : 0);
     }
@@ -515,8 +516,9 @@ static void DiagnoseInvalidUnicodeCharacterName(
 
     std::string Str;
     llvm::UTF32 V = Match.Value;
-    LLVM_ATTRIBUTE_UNUSED bool Converted =
+    bool Converted =
         llvm::convertUTF32ToUTF8String(llvm::ArrayRef<llvm::UTF32>(&V, 1), Str);
+    (void)Converted;
     assert(Converted && "Found a match wich is not a unicode character");
 
     Diag(Diags, Features, Loc, TokBegin, TokRangeBegin, TokRangeEnd,
@@ -639,7 +641,7 @@ static bool ProcessUCNEscape(const char *ThisTokBegin, const char *&ThisTokBuf,
 
   if ((IsDelimitedEscapeSequence || IsNamedEscapeSequence) && Diags)
     Diag(Diags, Features, Loc, ThisTokBegin, UcnBegin, ThisTokBuf,
-         Features.CPlusPlus2b ? diag::warn_cxx2b_delimited_escape_sequence
+         Features.CPlusPlus23 ? diag::warn_cxx23_delimited_escape_sequence
                               : diag::ext_delimited_escape_sequence)
         << (IsNamedEscapeSequence ? 1 : 0) << (Features.CPlusPlus ? 1 : 0);
 
@@ -942,9 +944,13 @@ NumericLiteralParser::NumericLiteralParser(StringRef TokSpelling,
 
       // CUDA host and device may have different _Float16 support, therefore
       // allows f16 literals to avoid false alarm.
+      // When we compile for OpenMP target offloading on NVPTX, f16 suffix
+      // should also be supported.
       // ToDo: more precise check for CUDA.
-      if ((Target.hasFloat16Type() || LangOpts.CUDA) && s + 2 < ThisTokEnd &&
-          s[1] == '1' && s[2] == '6') {
+      // TODO: AMDGPU might also support it in the future.
+      if ((Target.hasFloat16Type() || LangOpts.CUDA ||
+           (LangOpts.OpenMPIsDevice && Target.getTriple().isNVPTX())) &&
+          s + 2 < ThisTokEnd && s[1] == '1' && s[2] == '6') {
         s += 2; // success, eat up 2 characters.
         isFloat16 = true;
         continue;
@@ -1752,7 +1758,7 @@ CharLiteralParser::CharLiteralParser(const char *begin, const char *end,
     LitVal = 0;
     for (size_t i = 0; i < NumCharsSoFar; ++i) {
       // check for enough leading zeros to shift into
-      multi_char_too_long |= (LitVal.countLeadingZeros() < 8);
+      multi_char_too_long |= (LitVal.countl_zero() < 8);
       LitVal <<= 8;
       LitVal = LitVal + (codepoint_buffer[i] & 0xFF);
     }
@@ -1861,28 +1867,27 @@ void StringLiteralParser::init(ArrayRef<Token> StringToks){
 
   // Implement Translation Phase #6: concatenation of string literals
   /// (C99 5.1.1.2p1).  The common case is only one string fragment.
-  for (unsigned i = 1; i != StringToks.size(); ++i) {
-    if (StringToks[i].getLength() < 2)
-      return DiagnoseLexingError(StringToks[i].getLocation());
+  for (const Token &Tok : StringToks) {
+    if (Tok.getLength() < 2)
+      return DiagnoseLexingError(Tok.getLocation());
 
     // The string could be shorter than this if it needs cleaning, but this is a
     // reasonable bound, which is all we need.
-    assert(StringToks[i].getLength() >= 2 && "literal token is invalid!");
-    SizeBound += StringToks[i].getLength()-2;  // -2 for "".
+    assert(Tok.getLength() >= 2 && "literal token is invalid!");
+    SizeBound += Tok.getLength() - 2; // -2 for "".
 
     // Remember maximum string piece length.
-    if (StringToks[i].getLength() > MaxTokenLength)
-      MaxTokenLength = StringToks[i].getLength();
+    if (Tok.getLength() > MaxTokenLength)
+      MaxTokenLength = Tok.getLength();
 
     // Remember if we see any wide or utf-8/16/32 strings.
     // Also check for illegal concatenations.
-    if (StringToks[i].isNot(Kind) && StringToks[i].isNot(tok::string_literal)) {
+    if (Tok.isNot(Kind) && Tok.isNot(tok::string_literal)) {
       if (isOrdinary()) {
-        Kind = StringToks[i].getKind();
+        Kind = Tok.getKind();
       } else {
         if (Diags)
-          Diags->Report(StringToks[i].getLocation(),
-                        diag::err_unsupported_string_concat);
+          Diags->Report(Tok.getLocation(), diag::err_unsupported_string_concat);
         hadError = true;
       }
     }

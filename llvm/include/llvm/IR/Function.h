@@ -50,7 +50,6 @@ struct DenormalMode;
 class DISubprogram;
 class LLVMContext;
 class Module;
-template <typename T> class Optional;
 class raw_ostream;
 class Type;
 class User;
@@ -438,15 +437,6 @@ public:
   /// attributes for the given arg.
   void addDereferenceableOrNullParamAttr(unsigned ArgNo, uint64_t Bytes);
 
-  /// Extract the alignment for a call or parameter (0=unknown).
-  /// FIXME: Remove this function once transition to Align is over.
-  /// Use getParamAlign() instead.
-  uint64_t getParamAlignment(unsigned ArgNo) const {
-    if (const auto MA = getParamAlign(ArgNo))
-      return MA->value();
-    return 0;
-  }
-
   MaybeAlign getParamAlign(unsigned ArgNo) const {
     return AttributeSets.getParamAlignment(ArgNo);
   }
@@ -491,6 +481,11 @@ public:
   /// @param ArgNo AttributeList ArgNo, referring to an argument.
   uint64_t getParamDereferenceableOrNullBytes(unsigned ArgNo) const {
     return AttributeSets.getParamDereferenceableOrNullBytes(ArgNo);
+  }
+
+  /// Extract the nofpclass attribute for a parameter.
+  FPClassTest getParamNoFPClass(unsigned ArgNo) const {
+    return AttributeSets.getParamNoFPClass(ArgNo);
   }
 
   /// Determine if the function is presplit coroutine.
@@ -658,6 +653,15 @@ public:
   /// Returns the denormal handling type for the default rounding mode of the
   /// function.
   DenormalMode getDenormalMode(const fltSemantics &FPType) const;
+
+  /// Return the representational value of "denormal-fp-math". Code interested
+  /// in the semantics of the function should use getDenormalMode instead.
+  DenormalMode getDenormalModeRaw() const;
+
+  /// Return the representational value of "denormal-fp-math-f32". Code
+  /// interested in the semantics of the function should use getDenormalMode
+  /// instead.
+  DenormalMode getDenormalModeF32Raw() const;
 
   /// copyAttributesFrom - copy all additional attributes (those not needed to
   /// create a Function) from the Function Src to this one.
@@ -918,7 +922,7 @@ public:
   DISubprogram *getSubprogram() const;
 
   /// Returns true if we should emit debug info for profiling.
-  bool isDebugInfoForProfiling() const;
+  bool shouldEmitDebugInfoForProfiling() const;
 
   /// Check if null pointer dereferencing is considered undefined behavior for
   /// the function.

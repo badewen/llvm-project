@@ -9,7 +9,7 @@
 // BLOCKS:#define __block __attribute__((__blocks__(byref)))
 //
 //
-// RUN: %clang_cc1 -x c++ -fgnuc-version=4.2.1 -std=c++2b -E -dM < /dev/null | FileCheck -match-full-lines -check-prefix CXX2B %s
+// RUN: %clang_cc1 -x c++ -fgnuc-version=4.2.1 -std=c++23 -E -dM < /dev/null | FileCheck -match-full-lines -check-prefix CXX2B %s
 //
 // CXX2B:#define __GNUG__ 4
 // CXX2B:#define __GXX_EXPERIMENTAL_CXX0X__ 1
@@ -133,7 +133,7 @@
 // RUN: %clang_cc1 -ffreestanding -E -dM < /dev/null | FileCheck -match-full-lines -check-prefix FREESTANDING %s
 // FREESTANDING:#define __STDC_HOSTED__ 0
 //
-// RUN: %clang_cc1 -x c++ -fgnuc-version=4.2.1 -std=gnu++2b -E -dM < /dev/null | FileCheck -match-full-lines -check-prefix GXX2B %s
+// RUN: %clang_cc1 -x c++ -fgnuc-version=4.2.1 -std=gnu++23 -E -dM < /dev/null | FileCheck -match-full-lines -check-prefix GXX2B %s
 //
 // GXX2B:#define __GNUG__ 4
 // GXX2B:#define __GXX_WEAK__ 1
@@ -1597,6 +1597,10 @@
 // WEBASSEMBLY-NEXT:#define __GCC_ATOMIC_SHORT_LOCK_FREE 2
 // WEBASSEMBLY-NEXT:#define __GCC_ATOMIC_TEST_AND_SET_TRUEVAL 1
 // WEBASSEMBLY-NEXT:#define __GCC_ATOMIC_WCHAR_T_LOCK_FREE 2
+// WEBASSEMBLY-NEXT:#define __GCC_HAVE_SYNC_COMPARE_AND_SWAP_1 1
+// WEBASSEMBLY-NEXT:#define __GCC_HAVE_SYNC_COMPARE_AND_SWAP_2 1
+// WEBASSEMBLY-NEXT:#define __GCC_HAVE_SYNC_COMPARE_AND_SWAP_4 1
+// WEBASSEMBLY-NEXT:#define __GCC_HAVE_SYNC_COMPARE_AND_SWAP_8 1
 // WEBASSEMBLY-NEXT:#define __GNUC_MINOR__ {{.*}}
 // WEBASSEMBLY-NEXT:#define __GNUC_PATCHLEVEL__ {{.*}}
 // WEBASSEMBLY-NEXT:#define __GNUC_STDC_INLINE__ 1

@@ -23,6 +23,7 @@
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineJumpTableInfo.h"
 #include "llvm/CodeGen/MachineMemOperand.h"
+#include "llvm/CodeGen/MachineValueType.h"
 #include "llvm/CodeGen/RuntimeLibcalls.h"
 #include "llvm/CodeGen/SelectionDAG.h"
 #include "llvm/CodeGen/SelectionDAGNodes.h"
@@ -41,7 +42,6 @@
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
-#include "llvm/Support/MachineValueType.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetMachine.h"
@@ -552,16 +552,16 @@ void SelectionDAGLegalize::LegalizeStoreOps(SDNode *Node) {
     // Promote to a byte-sized store with upper bits zero if not
     // storing an integral number of bytes.  For example, promote
     // TRUNCSTORE:i1 X -> TRUNCSTORE:i8 (and X, 1)
-    EVT NVT = EVT::getIntegerVT(*DAG.getContext(), StSize.getFixedSize());
+    EVT NVT = EVT::getIntegerVT(*DAG.getContext(), StSize.getFixedValue());
     Value = DAG.getZeroExtendInReg(Value, dl, StVT);
     SDValue Result =
         DAG.getTruncStore(Chain, dl, Value, Ptr, ST->getPointerInfo(), NVT,
                           ST->getOriginalAlign(), MMOFlags, AAInfo);
     ReplaceNode(SDValue(Node, 0), Result);
-  } else if (!StVT.isVector() && !isPowerOf2_64(StWidth.getFixedSize())) {
+  } else if (!StVT.isVector() && !isPowerOf2_64(StWidth.getFixedValue())) {
     // If not storing a power-of-2 number of bits, expand as two stores.
     assert(!StVT.isVector() && "Unsupported truncstore!");
-    unsigned StWidthBits = StWidth.getFixedSize();
+    unsigned StWidthBits = StWidth.getFixedValue();
     unsigned LogStWidth = Log2_32(StWidthBits);
     assert(LogStWidth < 32);
     unsigned RoundWidth = 1 << LogStWidth;
@@ -769,10 +769,10 @@ void SelectionDAGLegalize::LegalizeLoadOps(SDNode *Node) {
 
     Value = Result;
     Chain = Ch;
-  } else if (!isPowerOf2_64(SrcWidth.getKnownMinSize())) {
+  } else if (!isPowerOf2_64(SrcWidth.getKnownMinValue())) {
     // If not loading a power-of-2 number of bits, expand as two loads.
     assert(!SrcVT.isVector() && "Unsupported extload!");
-    unsigned SrcWidthBits = SrcWidth.getFixedSize();
+    unsigned SrcWidthBits = SrcWidth.getFixedValue();
     unsigned LogSrcWidth = Log2_32(SrcWidthBits);
     assert(LogSrcWidth < 32);
     unsigned RoundWidth = 1 << LogSrcWidth;
@@ -1078,7 +1078,7 @@ void SelectionDAGLegalize::LegalizeOp(SDNode *Node) {
     SimpleFinishLegalizing = false;
     break;
   case ISD::EXTRACT_ELEMENT:
-  case ISD::FLT_ROUNDS_:
+  case ISD::GET_ROUNDING:
   case ISD::MERGE_VALUES:
   case ISD::EH_RETURN:
   case ISD::FRAME_TO_ARGS_OFFSET:
@@ -1546,7 +1546,7 @@ void SelectionDAGLegalize::getSignAsIntValue(FloatSignAsInt &State,
 
   auto &DataLayout = DAG.getDataLayout();
   // Store the float to memory, then load the sign part out as an integer.
-  MVT LoadTy = TLI.getRegisterType(*DAG.getContext(), MVT::i8);
+  MVT LoadTy = TLI.getRegisterType(MVT::i8);
   // First create a temporary that is aligned for both the load and store.
   SDValue StackPtr = DAG.CreateStackTemporary(FloatVT, LoadTy);
   int FI = cast<FrameIndexSDNode>(StackPtr.getNode())->getIndex();
@@ -2365,10 +2365,10 @@ SDValue SelectionDAGLegalize::ExpandLegalINT_TO_FP(SDNode *Node,
     SDValue Load =
         DAG.getLoad(MVT::f64, dl, MemChain, StackSlot, MachinePointerInfo());
     // FP constant to bias correct the final result
-    SDValue Bias = DAG.getConstantFP(isSigned ?
-                                     BitsToDouble(0x4330000080000000ULL) :
-                                     BitsToDouble(0x4330000000000000ULL),
-                                     dl, MVT::f64);
+    SDValue Bias = DAG.getConstantFP(
+        isSigned ? llvm::bit_cast<double>(0x4330000080000000ULL)
+                 : llvm::bit_cast<double>(0x4330000000000000ULL),
+        dl, MVT::f64);
     // Subtract the bias and get the final result.
     SDValue Sub;
     SDValue Result;
@@ -2696,6 +2696,11 @@ bool SelectionDAGLegalize::ExpandNode(SDNode *Node) {
     if ((Tmp1 = TLI.expandABS(Node, DAG)))
       Results.push_back(Tmp1);
     break;
+  case ISD::ABDS:
+  case ISD::ABDU:
+    if ((Tmp1 = TLI.expandABD(Node, DAG)))
+      Results.push_back(Tmp1);
+    break;
   case ISD::CTPOP:
     if ((Tmp1 = TLI.expandCTPOP(Node, DAG)))
       Results.push_back(Tmp1);
@@ -2741,7 +2746,7 @@ bool SelectionDAGLegalize::ExpandNode(SDNode *Node) {
                                   FA, Offset));
     break;
   }
-  case ISD::FLT_ROUNDS_:
+  case ISD::GET_ROUNDING:
     Results.push_back(DAG.getConstant(1, dl, Node->getValueType(0)));
     Results.push_back(Node->getOperand(0));
     break;
@@ -3477,13 +3482,13 @@ bool SelectionDAGLegalize::ExpandNode(SDNode *Node) {
     // if we were allowed to generate libcalls to division functions of illegal
     // type. But we cannot do that.
     llvm_unreachable("Cannot expand DIVFIX!");
-  case ISD::ADDCARRY:
-  case ISD::SUBCARRY: {
+  case ISD::UADDO_CARRY:
+  case ISD::USUBO_CARRY: {
     SDValue LHS = Node->getOperand(0);
     SDValue RHS = Node->getOperand(1);
     SDValue Carry = Node->getOperand(2);
 
-    bool IsAdd = Node->getOpcode() == ISD::ADDCARRY;
+    bool IsAdd = Node->getOpcode() == ISD::UADDO_CARRY;
 
     // Initial add of the 2 operands.
     unsigned Op = IsAdd ? ISD::ADD : ISD::SUB;
@@ -3628,9 +3633,7 @@ bool SelectionDAGLegalize::ExpandNode(SDNode *Node) {
     } else {
       // We test only the i1 bit.  Skip the AND if UNDEF or another AND.
       if (Tmp2.isUndef() ||
-          (Tmp2.getOpcode() == ISD::AND &&
-           isa<ConstantSDNode>(Tmp2.getOperand(1)) &&
-           cast<ConstantSDNode>(Tmp2.getOperand(1))->getZExtValue() == 1))
+          (Tmp2.getOpcode() == ISD::AND && isOneConstant(Tmp2.getOperand(1))))
         Tmp3 = Tmp2;
       else
         Tmp3 = DAG.getNode(ISD::AND, dl, Tmp2.getValueType(), Tmp2,

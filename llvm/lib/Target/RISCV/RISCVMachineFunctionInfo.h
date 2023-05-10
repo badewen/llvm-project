@@ -1,4 +1,4 @@
-//=- RISCVMachineFunctionInfo.h - RISCV machine function info -----*- C++ -*-=//
+//=- RISCVMachineFunctionInfo.h - RISC-V machine function info ----*- C++ -*-=//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -72,7 +72,7 @@ private:
   SmallVector<Register, 8> SExt32Registers;
 
 public:
-  RISCVMachineFunctionInfo(const MachineFunction &MF) {}
+  RISCVMachineFunctionInfo(const Function &F, const TargetSubtargetInfo *STI) {}
 
   MachineFunctionInfo *
   clone(BumpPtrAllocator &Allocator, MachineFunction &DestMF,
