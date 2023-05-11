@@ -44,6 +44,15 @@ jobs:
         with:
           arch: amd64_x86
         
+      - name: Cache
+        uses: actions/cache@v1.2.1
+        with:
+          # A directory to store and save the cache
+          path: D:/a/llvm-project/llvm-project/build/
+          # An explicit key for restoring and saving the cache
+          key: abcdefghij
+          # An ordered list of keys to use for restoring the cache if no cache hit occurred for key
+        
       - name : build
         run: |
           mkdir build
@@ -51,7 +60,7 @@ jobs:
           set CC=cl    
           set CXX=cl
           mkdir install
-          cmake -GNinja -DCMAKE_BUILD_TYPE=MinSizeRel -DCMAKE_INSTALL_PREFIX="D:/a/llvm-project/llvm-project/build/install" -DLLVM_ENABLE_PROJECTS='clang;lld;clang-tools-extra' -DLLVM_ENABLE_RUNTIMES="all" ../llvm
+          cmake -GNinja -DCMAKE_BUILD_TYPE=MinSizeRel -DCMAKE_INSTALL_PREFIX="D:/a/llvm-project/llvm-project/build/install" -DLLVM_ENABLE_PROJECTS='clang;lld;clang-tools-extra' -DLLVM_ENABLE_RUNTIMES=all ../llvm
           ninja -w dupbuild=warn
           cmake --install . --prefix "D:/a/llvm-project/llvm-project/build/install"
           dir
