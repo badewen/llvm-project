@@ -60,7 +60,7 @@ jobs:
           set CC=cl    
           set CXX=cl
           mkdir install
-          cmake -GNinja -DCMAKE_BUILD_TYPE=MinSizeRel -DCMAKE_INSTALL_PREFIX="D:/a/llvm-project/llvm-project/build/install" -DLLVM_ENABLE_PROJECTS='clang;lldb;lld;clang-tools-extra' -DLLVM_ENABLE_RUNTIMES=all ../llvm
+          cmake -GNinja -DCMAKE_BUILD_TYPE=MinSizeRel -DCMAKE_INSTALL_PREFIX="D:/a/llvm-project/llvm-project/build/install" -DLLVM_ENABLE_PROJECTS=all -DLLVM_ENABLE_RUNTIMES=all ../llvm
           ninja -w dupbuild=warn
           cmake --install . --prefix "D:/a/llvm-project/llvm-project/build/install"
           dir
