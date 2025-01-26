@@ -17,12 +17,10 @@
 #include "llvm/ExecutionEngine/JITLink/ELF_aarch64.h"
 #include "llvm/ExecutionEngine/JITLink/ELF_i386.h"
 #include "llvm/ExecutionEngine/JITLink/ELF_loongarch.h"
+#include "llvm/ExecutionEngine/JITLink/ELF_ppc64.h"
 #include "llvm/ExecutionEngine/JITLink/ELF_riscv.h"
 #include "llvm/ExecutionEngine/JITLink/ELF_x86_64.h"
 #include "llvm/Object/ELF.h"
-#include "llvm/Support/Endian.h"
-#include "llvm/Support/Format.h"
-#include "llvm/Support/MemoryBuffer.h"
 #include <cstring>
 
 using namespace llvm;
@@ -51,11 +49,28 @@ Expected<uint16_t> readTargetMachineArch(StringRef Buffer) {
     }
   }
 
+  if (Data[ELF::EI_DATA] == ELF::ELFDATA2MSB) {
+    if (Data[ELF::EI_CLASS] == ELF::ELFCLASS64) {
+      if (auto File = llvm::object::ELF64BEFile::create(Buffer)) {
+        return File->getHeader().e_machine;
+      } else {
+        return File.takeError();
+      }
+    } else if (Data[ELF::EI_CLASS] == ELF::ELFCLASS32) {
+      if (auto File = llvm::object::ELF32BEFile::create(Buffer)) {
+        return File->getHeader().e_machine;
+      } else {
+        return File.takeError();
+      }
+    }
+  }
+
   return ELF::EM_NONE;
 }
 
 Expected<std::unique_ptr<LinkGraph>>
-createLinkGraphFromELFObject(MemoryBufferRef ObjectBuffer) {
+createLinkGraphFromELFObject(MemoryBufferRef ObjectBuffer,
+                             std::shared_ptr<orc::SymbolStringPool> SSP) {
   StringRef Buffer = ObjectBuffer.getBuffer();
   if (Buffer.size() < ELF::EI_NIDENT)
     return make_error<JITLinkError>("Truncated ELF buffer");
@@ -63,23 +78,30 @@ createLinkGraphFromELFObject(MemoryBufferRef ObjectBuffer) {
   if (memcmp(Buffer.data(), ELF::ElfMagic, strlen(ELF::ElfMagic)) != 0)
     return make_error<JITLinkError>("ELF magic not valid");
 
+  uint8_t DataEncoding = Buffer.data()[ELF::EI_DATA];
   Expected<uint16_t> TargetMachineArch = readTargetMachineArch(Buffer);
   if (!TargetMachineArch)
     return TargetMachineArch.takeError();
 
   switch (*TargetMachineArch) {
   case ELF::EM_AARCH64:
-    return createLinkGraphFromELFObject_aarch64(ObjectBuffer);
+    return createLinkGraphFromELFObject_aarch64(ObjectBuffer, std::move(SSP));
   case ELF::EM_ARM:
-    return createLinkGraphFromELFObject_aarch32(ObjectBuffer);
+    return createLinkGraphFromELFObject_aarch32(ObjectBuffer, std::move(SSP));
+  case ELF::EM_PPC64: {
+    if (DataEncoding == ELF::ELFDATA2LSB)
+      return createLinkGraphFromELFObject_ppc64le(ObjectBuffer, std::move(SSP));
+    else
+      return createLinkGraphFromELFObject_ppc64(ObjectBuffer, std::move(SSP));
+  }
   case ELF::EM_LOONGARCH:
-    return createLinkGraphFromELFObject_loongarch(ObjectBuffer);
+    return createLinkGraphFromELFObject_loongarch(ObjectBuffer, std::move(SSP));
   case ELF::EM_RISCV:
-    return createLinkGraphFromELFObject_riscv(ObjectBuffer);
+    return createLinkGraphFromELFObject_riscv(ObjectBuffer, std::move(SSP));
   case ELF::EM_X86_64:
-    return createLinkGraphFromELFObject_x86_64(ObjectBuffer);
+    return createLinkGraphFromELFObject_x86_64(ObjectBuffer, std::move(SSP));
   case ELF::EM_386:
-    return createLinkGraphFromELFObject_i386(ObjectBuffer);
+    return createLinkGraphFromELFObject_i386(ObjectBuffer, std::move(SSP));
   default:
     return make_error<JITLinkError>(
         "Unsupported target machine architecture in ELF object " +
@@ -102,6 +124,12 @@ void link_ELF(std::unique_ptr<LinkGraph> G,
   case Triple::loongarch32:
   case Triple::loongarch64:
     link_ELF_loongarch(std::move(G), std::move(Ctx));
+    return;
+  case Triple::ppc64:
+    link_ELF_ppc64(std::move(G), std::move(Ctx));
+    return;
+  case Triple::ppc64le:
+    link_ELF_ppc64le(std::move(G), std::move(Ctx));
     return;
   case Triple::riscv32:
   case Triple::riscv64:

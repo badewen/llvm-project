@@ -48,33 +48,32 @@ struct DuplicateFuncOpEquivalenceInfo
     return hash;
   }
 
-  static bool isEqual(const func::FuncOp cLhs, const func::FuncOp cRhs) {
-    if (cLhs == cRhs) {
+  static bool isEqual(func::FuncOp lhs, func::FuncOp rhs) {
+    if (lhs == rhs)
       return true;
-    }
-    if (cLhs == getTombstoneKey() || cLhs == getEmptyKey() ||
-        cRhs == getTombstoneKey() || cRhs == getEmptyKey()) {
+    if (lhs == getTombstoneKey() || lhs == getEmptyKey() ||
+        rhs == getTombstoneKey() || rhs == getEmptyKey())
       return false;
-    }
 
-    // Check attributes equivalence, ignoring the symbol name.
-    if (cLhs->getAttrDictionary().size() != cRhs->getAttrDictionary().size()) {
+    if (lhs.isDeclaration() || rhs.isDeclaration())
       return false;
-    }
-    func::FuncOp lhs = const_cast<func::FuncOp &>(cLhs);
-    StringAttr symNameAttrName = lhs.getSymNameAttrName();
-    for (NamedAttribute namedAttr : cLhs->getAttrs()) {
-      StringAttr attrName = namedAttr.getName();
-      if (attrName == symNameAttrName) {
-        continue;
-      }
-      if (namedAttr.getValue() != cRhs->getAttr(attrName)) {
-        return false;
-      }
-    }
+
+    // Check discardable attributes equivalence
+    if (lhs->getDiscardableAttrDictionary() !=
+        rhs->getDiscardableAttrDictionary())
+      return false;
+
+    // Check properties equivalence, ignoring the symbol name.
+    // Make a copy, so that we can erase the symbol name and perform the
+    // comparison.
+    auto pLhs = lhs.getProperties();
+    auto pRhs = rhs.getProperties();
+    pLhs.sym_name = nullptr;
+    pRhs.sym_name = nullptr;
+    if (pLhs != pRhs)
+      return false;
 
     // Compare inner workings.
-    func::FuncOp rhs = const_cast<func::FuncOp &>(cRhs);
     return OperationEquivalence::isRegionEquivalentTo(
         &lhs.getBody(), &rhs.getBody(), OperationEquivalence::IgnoreLocations);
   }
@@ -102,14 +101,14 @@ struct DuplicateFunctionEliminationPass
       }
     });
 
-    // Update call ops to call unique func op representants.
-    module.walk([&](func::CallOp callOp) {
-      func::FuncOp callee = getRepresentant[callOp.getCalleeAttr().getAttr()];
-      callOp.setCallee(callee.getSymName());
-    });
-
-    // Erase redundant func ops.
+    // Update all symbol uses to reference unique func op
+    // representants and erase redundant func ops.
+    SymbolTableCollection symbolTable;
+    SymbolUserMap userMap(symbolTable, module);
     for (auto it : toBeErased) {
+      StringAttr oldSymbol = it.getSymNameAttr();
+      StringAttr newSymbol = getRepresentant[oldSymbol].getSymNameAttr();
+      userMap.replaceAllUsesWith(it, newSymbol);
       it.erase();
     }
   }

@@ -31,7 +31,6 @@
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/TypeUtilities.h"
 #include "mlir/Interfaces/VectorInterfaces.h"
-#include "mlir/Support/LogicalResult.h"
 
 #define DEBUG_TYPE "lower-vector-transpose"
 
@@ -156,7 +155,7 @@ static Value createUnpackHiPs(ImplicitLocOpBuilder &b, Value v1, Value v2,
 /// dst[511:384] := SELECT4(v2[511:0], mask[7:6])
 static Value create4x128BitSuffle(ImplicitLocOpBuilder &b, Value v1, Value v2,
                                   uint8_t mask) {
-  assert(v1.getType().cast<VectorType>().getShape()[0] == 16 &&
+  assert(cast<VectorType>(v1.getType()).getShape()[0] == 16 &&
          "expected a vector with length=16");
   SmallVector<int64_t> shuffleMask;
   auto appendToMask = [&](int64_t base, uint8_t control) {
@@ -291,7 +290,7 @@ static Value transposeToShuffle16x16(OpBuilder &builder, Value source, int m,
   vs[0xf] = create4x128BitSuffle(b, t7, tf, 0xdd);
 
   auto reshInputType = VectorType::get(
-      {m, n}, source.getType().cast<VectorType>().getElementType());
+      {m, n}, cast<VectorType>(source.getType()).getElementType());
   Value res =
       b.create<arith::ConstantOp>(reshInputType, b.getZeroAttr(reshInputType));
   for (int64_t i = 0; i < m; ++i)
@@ -326,10 +325,12 @@ public:
     VectorType inputType = op.getSourceVectorType();
     VectorType resType = op.getResultVectorType();
 
+    if (inputType.isScalable())
+      return rewriter.notifyMatchFailure(
+          op, "This lowering does not support scalable vectors");
+
     // Set up convenience transposition table.
-    SmallVector<int64_t> transp;
-    for (auto attr : op.getTransp())
-      transp.push_back(attr.cast<IntegerAttr>().getInt());
+    ArrayRef<int64_t> transp = op.getPermutation();
 
     if (isShuffleLike(vectorTransformOptions.vectorTransposeLowering) &&
         succeeded(isTranspose2DSlice(op)))
@@ -391,6 +392,64 @@ private:
   vector::VectorTransformsOptions vectorTransformOptions;
 };
 
+/// Rewrites vector.transpose as vector.shape_cast. This pattern is only applied
+/// to 2D vectors with at least one unit dim. For example:
+///
+/// Replace:
+///   vector.transpose %0, [1, 0] : vector<4x1xi32>> to
+///                                 vector<1x4xi32>
+/// with:
+///   vector.shape_cast %0 : vector<4x1xi32> to vector<1x4xi32>
+///
+/// Source with leading unit dim (inverse) is also replaced. Unit dim must
+/// be fixed. Non-unit dim can be scalable.
+///
+/// TODO: This pattern was introduced specifically to help lower scalable
+/// vectors. In hindsight, a more specialised canonicalization (for shape_cast's
+/// to cancel out) would be preferable:
+///
+///  BEFORE:
+///     %0 = some_op
+///     %1 = vector.shape_cast %0 : vector<[4]xf32> to vector<[4]x1xf32>
+///     %2 = vector.transpose %1 [1, 0] : vector<[4]x1xf32> to vector<1x[4]xf32>
+///  AFTER:
+///     %0 = some_op
+///     %1 = vector.shape_cast %0 : vector<[4]xf32> to vector<1x[4]xf32>
+///
+/// Given the context above, we may want to consider (re-)moving this pattern
+/// at some later time. I am leaving it for now in case there are other users
+/// that I am not aware of.
+class Transpose2DWithUnitDimToShapeCast
+    : public OpRewritePattern<vector::TransposeOp> {
+public:
+  using OpRewritePattern::OpRewritePattern;
+
+  Transpose2DWithUnitDimToShapeCast(MLIRContext *context,
+                                    PatternBenefit benefit = 1)
+      : OpRewritePattern<vector::TransposeOp>(context, benefit) {}
+
+  LogicalResult matchAndRewrite(vector::TransposeOp op,
+                                PatternRewriter &rewriter) const override {
+    Value input = op.getVector();
+    VectorType resType = op.getResultVectorType();
+
+    // Set up convenience transposition table.
+    ArrayRef<int64_t> transp = op.getPermutation();
+
+    if (resType.getRank() == 2 &&
+        ((resType.getShape().front() == 1 &&
+          !resType.getScalableDims().front()) ||
+         (resType.getShape().back() == 1 &&
+          !resType.getScalableDims().back())) &&
+        transp == ArrayRef<int64_t>({1, 0})) {
+      rewriter.replaceOpWithNewOp<vector::ShapeCastOp>(op, resType, input);
+      return success();
+    }
+
+    return failure();
+  }
+};
+
 /// Rewrite a 2-D vector.transpose as a sequence of shuffle ops.
 /// If the strategy is Shuffle1D, it will be lowered to:
 ///   vector.shape_cast 2D -> 1D
@@ -414,6 +473,10 @@ public:
     if (!isShuffleLike(vectorTransformOptions.vectorTransposeLowering))
       return rewriter.notifyMatchFailure(
           op, "not using vector shuffle based lowering");
+
+    if (op.getSourceVectorType().isScalable())
+      return rewriter.notifyMatchFailure(
+          op, "vector shuffle lowering not supported for scalable vectors");
 
     auto srcGtOneDims = isTranspose2DSlice(op);
     if (failed(srcGtOneDims))
@@ -459,6 +522,8 @@ private:
 void mlir::vector::populateVectorTransposeLoweringPatterns(
     RewritePatternSet &patterns, VectorTransformsOptions options,
     PatternBenefit benefit) {
+  patterns.add<Transpose2DWithUnitDimToShapeCast>(patterns.getContext(),
+                                                  benefit);
   patterns.add<TransposeOpLowering, TransposeOp2DToShuffleLowering>(
       options, patterns.getContext(), benefit);
 }

@@ -27,6 +27,8 @@ public:
     return lldb::eLanguageTypeObjC_plus_plus;
   }
 
+  llvm::StringRef GetUserEntryPointName() const override { return "main"; }
+
   llvm::StringRef GetNilReferenceSummaryString() override { return "nil"; }
 
   bool IsSourceFile(llvm::StringRef file_path) const override;
@@ -40,7 +42,10 @@ public:
 
   static lldb_private::Language *CreateInstance(lldb::LanguageType language);
 
-  ConstString GetInstanceVariableName() override { return ConstString("self"); }
+  llvm::StringRef GetInstanceVariableName() override { return "self"; }
+
+  virtual std::optional<bool>
+  GetBooleanFromString(llvm::StringRef str) const override;
 
   static llvm::StringRef GetPluginNameStatic() { return "objcplusplus"; }
 

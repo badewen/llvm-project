@@ -1,9 +1,17 @@
 add_libc_fuzzer(
-  qsort_fuzz
+  quick_sort_fuzz
   SRCS
-    qsort_fuzz.cpp
+    quick_sort_fuzz.cpp
   DEPENDS
-    libc.src.stdlib.qsort
+    libc.src.stdlib.qsort_util
+)
+
+add_libc_fuzzer(
+  heap_sort_fuzz
+  SRCS
+    heap_sort_fuzz.cpp
+  DEPENDS
+    libc.src.stdlib.qsort_util
 )
 
 add_libc_fuzzer(
@@ -14,19 +22,20 @@ add_libc_fuzzer(
     StringParserOutputDiff.h
   DEPENDS
     libc.src.stdlib.atof
-  COMPILE_OPTIONS
-    -DLLVM_LIBC_ATOF_DIF_FUZZ_SKIP_GLIBC_HEX_SUBNORMAL_ERR
 )
 
 add_libc_fuzzer(
   strtofloat_fuzz
+  NEED_MPFR
   SRCS
     strtofloat_fuzz.cpp
   DEPENDS
+    libc.hdr.math_macros
     libc.src.stdlib.atof
     libc.src.stdlib.strtof
     libc.src.stdlib.strtod
     libc.src.stdlib.strtold
+    libc.src.__support.FPUtil.fp_bits
 )
 
 add_libc_fuzzer(

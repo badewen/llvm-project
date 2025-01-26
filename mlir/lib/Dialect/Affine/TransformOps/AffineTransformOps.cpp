@@ -12,10 +12,8 @@
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Affine/IR/AffineValueMap.h"
 #include "mlir/Dialect/Affine/LoopUtils.h"
-#include "mlir/Dialect/PDL/IR/PDL.h"
-#include "mlir/Dialect/PDL/IR/PDLTypes.h"
 #include "mlir/Dialect/Transform/IR/TransformDialect.h"
-#include "mlir/Dialect/Transform/IR/TransformInterfaces.h"
+#include "mlir/Dialect/Transform/Interfaces/TransformInterfaces.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
 using namespace mlir;
@@ -65,7 +63,8 @@ struct SimplifyAffineMinMaxOp : public OpRewritePattern<OpTy> {
 } // namespace
 
 DiagnosedSilenceableFailure
-SimplifyBoundedAffineOpsOp::apply(TransformResults &results,
+SimplifyBoundedAffineOpsOp::apply(transform::TransformRewriter &rewriter,
+                                  TransformResults &results,
                                   TransformState &state) {
   // Get constraints for bounded values.
   SmallVector<int64_t> lbs;
@@ -75,8 +74,7 @@ SimplifyBoundedAffineOpsOp::apply(TransformResults &results,
   for (const auto &it : llvm::zip_equal(getBoundedValues(), getLowerBounds(),
                                         getUpperBounds())) {
     Value handle = std::get<0>(it);
-    ArrayRef<Operation *> boundedValueOps = state.getPayloadOps(handle);
-    for (Operation *op : boundedValueOps) {
+    for (Operation *op : state.getPayloadOps(handle)) {
       if (op->getNumResults() != 1 || !op->getResult(0).getType().isIndex()) {
         auto diag =
             emitDefiniteFailure()
@@ -104,8 +102,8 @@ SimplifyBoundedAffineOpsOp::apply(TransformResults &results,
   }
 
   // Transform all targets.
-  ArrayRef<Operation *> targets = state.getPayloadOps(getTarget());
-  for (Operation *target : targets) {
+  SmallVector<Operation *> targets;
+  for (Operation *target : state.getPayloadOps(getTarget())) {
     if (!isa<AffineMinOp, AffineMaxOp>(target)) {
       auto diag = emitDefiniteFailure()
                   << "target must be affine.min or affine.max";
@@ -118,6 +116,7 @@ SimplifyBoundedAffineOpsOp::apply(TransformResults &results,
       diag.attachNote(target->getLoc()) << "target/constrained op";
       return diag;
     }
+    targets.push_back(target);
   }
   SmallVector<Operation *> transformed;
   RewritePatternSet patterns(getContext());
@@ -129,9 +128,11 @@ SimplifyBoundedAffineOpsOp::apply(TransformResults &results,
                   SimplifyAffineMinMaxOp<AffineMaxOp>>(getContext(), cstr);
   FrozenRewritePatternSet frozenPatterns(std::move(patterns));
   GreedyRewriteConfig config;
+  config.listener =
+      static_cast<RewriterBase::Listener *>(rewriter.getListener());
   config.strictMode = GreedyRewriteStrictness::ExistingAndNewOps;
   // Apply the simplification pattern to a fixpoint.
-  if (failed(applyOpPatternsAndFold(targets, frozenPatterns, config))) {
+  if (failed(applyOpPatternsGreedily(targets, frozenPatterns, config))) {
     auto diag = emitDefiniteFailure()
                 << "affine.min/max simplification did not converge";
     return diag;
@@ -141,9 +142,9 @@ SimplifyBoundedAffineOpsOp::apply(TransformResults &results,
 
 void SimplifyBoundedAffineOpsOp::getEffects(
     SmallVectorImpl<MemoryEffects::EffectInstance> &effects) {
-  consumesHandle(getTarget(), effects);
-  for (Value v : getBoundedValues())
-    onlyReadsHandle(v, effects);
+  consumesHandle(getTargetMutable(), effects);
+  for (OpOperand &operand : getBoundedValuesMutable())
+    onlyReadsHandle(operand, effects);
   modifiesPayload(effects);
 }
 
@@ -156,6 +157,8 @@ class AffineTransformDialectExtension
     : public transform::TransformDialectExtension<
           AffineTransformDialectExtension> {
 public:
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(AffineTransformDialectExtension)
+
   using Base::Base;
 
   void init() {

@@ -109,7 +109,7 @@ clang-tblgen Options
 
 .. option:: -gen-clang-attr-classes
 
-  Generate Clang attribute clases.
+  Generate Clang attribute classes.
 
 .. option:: -gen-clang-attr-parser-string-switches
 
@@ -275,6 +275,10 @@ clang-tblgen Options
 .. option:: -gen-arm-neon-test
 
   Generate ARM NEON tests for Clang.
+
+.. option:: -gen-arm-immcheck-types
+
+  Generate ``arm_immcheck_types.inc`` for Clang.
 
 .. option:: -gen-arm-sve-header
 
@@ -513,19 +517,13 @@ llvm-tblgen Options
 
   Make -gen-global-isel-combiner emit the specified combiners.
 
-.. option:: -gicombiner-show-expansions
+.. option:: -gicombiner-debug-cxxpreds
 
-  Make -gen-global-isel-combiner use C++ comments to indicate occurrences
-  of code expansion.
-
-.. option:: -gicombiner-stop-after-build
-
-  Make -gen-global-isel-combiner stop processing after building the match tree.
+  Add debug comments to all C++ predicates emitted by -gen-global-isel-combiner
 
 .. option:: -gicombiner-stop-after-parse
 
-  Make -gen-global-isel-combiner stop processing after parsing rules
-  and dump state.
+  Make -gen-global-isel-combiner stop processing after parsing rules and dump state.
 
 .. option:: -gen-instr-info
 

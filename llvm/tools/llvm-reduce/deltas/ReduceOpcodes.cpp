@@ -29,8 +29,8 @@ static bool shouldIgnoreArgument(const Value *V) {
 
 static Value *replaceIntrinsic(Module &M, IntrinsicInst *II,
                                Intrinsic::ID NewIID,
-                               ArrayRef<Type *> Tys = std::nullopt) {
-  Function *NewFunc = Intrinsic::getDeclaration(&M, NewIID, Tys);
+                               ArrayRef<Type *> Tys = {}) {
+  Function *NewFunc = Intrinsic::getOrInsertDeclaration(&M, NewIID, Tys);
   II->setCalledFunction(NewFunc);
   return II;
 }
@@ -86,13 +86,7 @@ static bool callLooksLikeLoadStore(CallBase *CB, Value *&DataArg,
     if (!Arg->getType()->isSized())
       return false;
 
-    PointerType *PT = dyn_cast<PointerType>(Arg->getType());
-    if (!PtrArg && PT) {
-      // FIXME: Could create bitcast for typed pointers, but roll back unused
-      // replacement only erases one instruction.
-      if (!IsStore && !PT->isOpaqueOrPointeeTypeMatches(CB->getType()))
-        return false;
-
+    if (!PtrArg && Arg->getType()->isPointerTy()) {
       PtrArg = Arg;
       continue;
     }
@@ -110,21 +104,12 @@ static bool callLooksLikeLoadStore(CallBase *CB, Value *&DataArg,
 
   // If we didn't find any arguments, we can fill in the pointer.
   if (!PtrArg) {
-    unsigned AS = CB->getModule()->getDataLayout().getAllocaAddrSpace();
+    unsigned AS = CB->getDataLayout().getAllocaAddrSpace();
 
-    PointerType *PtrTy =
-        PointerType::get(DataArg ? DataArg->getType()
-                                 : IntegerType::getInt32Ty(CB->getContext()),
-                         AS);
+    PointerType *PtrTy = PointerType::get(CB->getContext(), AS);
 
     PtrArg = ConstantPointerNull::get(PtrTy);
   }
-
-  // Make sure we don't emit an invalid store with typed pointers.
-  if (IsStore && DataArg->getType()->getPointerTo(
-        cast<PointerType>(PtrArg->getType())->getAddressSpace()) !=
-      PtrArg->getType())
-    return false;
 
   return true;
 }

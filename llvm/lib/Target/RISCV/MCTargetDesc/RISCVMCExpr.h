@@ -37,6 +37,10 @@ public:
     VK_RISCV_CALL,
     VK_RISCV_CALL_PLT,
     VK_RISCV_32_PCREL,
+    VK_RISCV_TLSDESC_HI,
+    VK_RISCV_TLSDESC_LOAD_LO,
+    VK_RISCV_TLSDESC_ADD_LO,
+    VK_RISCV_TLSDESC_CALL,
     VK_RISCV_Invalid // Must be the last item
   };
 
@@ -65,7 +69,7 @@ public:
   const MCFixup *getPCRelHiFixup(const MCFragment **DFOut) const;
 
   void printImpl(raw_ostream &OS, const MCAsmInfo *MAI) const override;
-  bool evaluateAsRelocatableImpl(MCValue &Res, const MCAsmLayout *Layout,
+  bool evaluateAsRelocatableImpl(MCValue &Res, const MCAssembler *Asm,
                                  const MCFixup *Fixup) const override;
   void visitUsedExpr(MCStreamer &Streamer) const override;
   MCFragment *findAssociatedFragment() const override {
@@ -79,8 +83,6 @@ public:
   static bool classof(const MCExpr *E) {
     return E->getKind() == MCExpr::Target;
   }
-
-  static bool classof(const RISCVMCExpr *) { return true; }
 
   static VariantKind getVariantKindForName(StringRef name);
   static StringRef getVariantKindName(VariantKind Kind);

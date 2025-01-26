@@ -36,7 +36,7 @@ template <typename ELFT> BuildIDRef getBuildID(const ELFFile<ELFT> &Obj) {
     for (auto N : Obj.notes(P, Err))
       if (N.getType() == ELF::NT_GNU_BUILD_ID &&
           N.getName() == ELF::ELF_NOTE_GNU)
-        return N.getDesc();
+        return N.getDesc(P.p_align);
     consumeError(std::move(Err));
   }
   return {};
@@ -50,7 +50,7 @@ BuildID llvm::object::parseBuildID(StringRef Str) {
     return {};
   ArrayRef<uint8_t> BuildID(reinterpret_cast<const uint8_t *>(Bytes.data()),
                             Bytes.size());
-  return SmallVector<uint8_t>(BuildID.begin(), BuildID.end());
+  return SmallVector<uint8_t>(BuildID);
 }
 
 BuildIDRef llvm::object::getBuildID(const ObjectFile *Obj) {
@@ -62,7 +62,7 @@ BuildIDRef llvm::object::getBuildID(const ObjectFile *Obj) {
     return ::getBuildID(O->getELFFile());
   if (auto *O = dyn_cast<ELFObjectFile<ELF64BE>>(Obj))
     return ::getBuildID(O->getELFFile());
-  return std::nullopt;
+  return {};
 }
 
 std::optional<std::string> BuildIDFetcher::fetch(BuildIDRef BuildID) const {

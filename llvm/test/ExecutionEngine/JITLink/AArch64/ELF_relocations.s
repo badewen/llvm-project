@@ -1,5 +1,5 @@
 # RUN: rm -rf %t && mkdir -p %t
-# RUN: llvm-mc -triple=aarch64-unknown-linux-gnu -relax-relocations=false \
+# RUN: llvm-mc -triple=aarch64-unknown-linux-gnu -x86-relax-relocations=false \
 # RUN:   -position-independent -filetype=obj -o %t/elf_reloc.o %s
 # RUN: llvm-jitlink -noexec \
 # RUN:              -abs external_data=0xdeadbeef \
@@ -38,6 +38,29 @@ local_func_call26:
 local_func_jump26:
         b	local_func
         .size   local_func_jump26, .-local_func_jump26
+
+# Check R_AARCH64_ADR_PREL_LO21 relocation of a local symbol
+#
+# jitlink-check: decode_operand(test_adr_prel_lo21, 1) = (adr_data - test_adr_prel_lo21)[20:0]
+        .globl  test_adr_prel_lo21, adr_data
+        .p2align  2
+test_adr_prel_lo21:
+        adr	x0, adr_data
+        .size test_adr_prel_lo21, .-test_adr_prel_lo21
+## ADR encoding is a bit tricky so use an offset with an irregular bit pattern
+## to test this bit better
+adr_data = test_adr_prel_lo21 + 0xe46f2
+
+# Check R_AARCH64_LD_PREL_LO19 relocation of a local symbol
+#
+# jitlink-check: decode_operand(test_ldr_prel_lo19 + 0, 1)[19:0] = \
+# jitlink-check:     (ldr_data - test_ldr_prel_lo19 + 0x4)[21:2]
+        .globl  test_ldr_prel_lo19, ldr_data
+        .p2align  2
+test_ldr_prel_lo19:
+        ldr	x0, ldr_data + 0x4
+        .size test_ldr_prel_lo19, .-test_ldr_prel_lo19
+ldr_data = test_ldr_prel_lo19 + 4
 
 # Check R_AARCH64_ADR_PREL_PG_HI21 / R_AARCH64_ADD_ABS_LO12_NC relocation of a local symbol
 #
@@ -240,6 +263,44 @@ test_adr_gotpage_external:
 test_ld64_gotlo12_external:
         ldr   x0, [x0, :got_lo12:external_data]
         .size test_ld64_gotlo12_external, .-test_ld64_gotlo12_external
+
+# Check R_AARCH64_LD64_GOTPAGE_LO15 handling with a reference to an external
+# symbol. Validate the reference to the GOT entry.
+# For the LDR :gotpage_lo15: instruction we have the 15-bit offset of the GOT
+# entry from the page containing the GOT.
+# jitlink-check: decode_operand(test_ld64_gotpagelo15_external, 2) = \
+# jitlink-check:     (got_addr(elf_reloc.o, external_data) - \
+# jitlink-check:     (section_addr(elf_reloc.o, $__GOT) & 0xfffffffffffff000)) \
+# jitlink-check:     [15:3]
+        .globl  test_ld64_gotpagelo15_external
+        .p2align  2
+test_ld64_gotpagelo15_external:
+        ldr   x0, [x0, :gotpage_lo15:external_data]
+        .size test_ld64_gotpagelo15_external, .-test_ld64_gotpagelo15_external
+
+# Check R_AARCH64_TSTBR14 for tbz
+#
+# jitlink-check: decode_operand(test_tstbr14_tbz, 2) = \
+# jitlink-check:     (test_tstbr14_tbz_target - test_tstbr14_tbz)[16:2]
+        .globl test_tstbr14_tbz, test_tstbr14_tbz_target
+        .p2align 2
+test_tstbr14_tbz:
+        tbz x0, 0, test_tstbr14_tbz_target
+        .skip (1 << 14)
+test_tstbr14_tbz_target:
+        .size test_tstbr14_tbz, .-test_tstbr14_tbz
+
+# Check R_AARCH64_TSTBR14 for tbnz
+#
+# jitlink-check: decode_operand(test_tstbr14_tbnz, 2) = \
+# jitlink-check:     (test_tstbr14_tbnz_target - test_tstbr14_tbnz)[16:2]
+        .globl test_tstbr14_tbnz, test_tstbr14_tbnz_target
+        .p2align 2
+test_tstbr14_tbnz:
+        tbnz x0, 0, test_tstbr14_tbnz_target
+        .skip (1 << 14)
+test_tstbr14_tbnz_target:
+        .size test_tstbr14_tbnz, .-test_tstbr14_tbnz
 
 # Check R_AARCH64_CONDBR19 for compare and branch instructions
 #

@@ -35,6 +35,24 @@ def TypedAttrInterface : AttrInterface<"TypedAttr"> {
 }
 
 //===----------------------------------------------------------------------===//
+// BlobAttrInterface
+//===----------------------------------------------------------------------===//
+
+def BlobAttrInterface : AttrInterface<"BlobAttr"> {
+  let cppNamespace = "::mlir";
+  let description = [{
+    This interface allows an attribute to expose a blob of data without more
+    information. The data must be stored so that it can be accessed as a
+    contiguous ArrayRef.
+  }];
+
+  let methods = [InterfaceMethod<
+    "Get the attribute's data",
+    "::llvm::ArrayRef<char>", "getData"
+  >];
+}
+
+//===----------------------------------------------------------------------===//
 // ElementsAttrInterface
 //===----------------------------------------------------------------------===//
 
@@ -397,7 +415,7 @@ def ElementsAttrInterface : AttrInterface<"ElementsAttr", [TypedAttrInterface]> 
       detail::ElementsAttrRange<DerivedAttrValueIterator<T>>;
     template <typename T, typename = DerivedAttrValueCheckT<T>>
     DerivedAttrValueIteratorRange<T> getValues() const {
-      auto castFn = [](Attribute attr) { return attr.template cast<T>(); };
+      auto castFn = [](Attribute attr) { return ::llvm::cast<T>(attr); };
       return {getShapedType(), llvm::map_range(getValues<Attribute>(),
               static_cast<T (*)(Attribute)>(castFn))};
     }
@@ -432,7 +450,7 @@ def ElementsAttrInterface : AttrInterface<"ElementsAttr", [TypedAttrInterface]> 
       if (!values)
         return std::nullopt;
 
-      auto castFn = [](Attribute attr) { return attr.template cast<T>(); };
+      auto castFn = [](Attribute attr) { return ::llvm::cast<T>(attr); };
       return DerivedAttrValueIteratorRange<T>(
         getShapedType(),
         llvm::map_range(*values, static_cast<T (*)(Attribute)>(castFn))
@@ -483,7 +501,7 @@ def MemRefLayoutAttrInterface : AttrInterface<"MemRefLayoutAttrInterface"> {
 
     InterfaceMethod<
       "Check if the current layout is applicable to the provided shape",
-      "::mlir::LogicalResult", "verifyLayout",
+      "::llvm::LogicalResult", "verifyLayout",
       (ins "::llvm::ArrayRef<int64_t>":$shape,
            "::llvm::function_ref<::mlir::InFlightDiagnostic()>":$emitError),
       [{}],

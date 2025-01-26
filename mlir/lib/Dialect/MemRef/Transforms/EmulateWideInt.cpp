@@ -138,7 +138,7 @@ struct EmulateWideIntPass final
 //===----------------------------------------------------------------------===//
 
 void memref::populateMemRefWideIntEmulationPatterns(
-    arith::WideIntEmulationConverter &typeConverter,
+    const arith::WideIntEmulationConverter &typeConverter,
     RewritePatternSet &patterns) {
   // Populate `memref.*` conversion patterns.
   patterns.add<ConvertMemRefAlloc, ConvertMemRefLoad, ConvertMemRefStore>(
@@ -149,7 +149,7 @@ void memref::populateMemRefWideIntEmulationConversions(
     arith::WideIntEmulationConverter &typeConverter) {
   typeConverter.addConversion(
       [&typeConverter](MemRefType ty) -> std::optional<Type> {
-        auto intTy = ty.getElementType().dyn_cast<IntegerType>();
+        auto intTy = dyn_cast<IntegerType>(ty.getElementType());
         if (!intTy)
           return ty;
 
@@ -159,7 +159,7 @@ void memref::populateMemRefWideIntEmulationConversions(
 
         Type newElemTy = typeConverter.convertType(intTy);
         if (!newElemTy)
-          return std::nullopt;
+          return nullptr;
 
         return ty.cloneWith(std::nullopt, newElemTy);
       });

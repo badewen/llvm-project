@@ -32,7 +32,6 @@
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/TypeUtilities.h"
 #include "mlir/Interfaces/VectorInterfaces.h"
-#include "mlir/Support/LogicalResult.h"
 
 #define DEBUG_TYPE "vector-broadcast-lowering"
 
@@ -49,7 +48,7 @@ public:
                                 PatternRewriter &rewriter) const override {
     auto loc = op.getLoc();
     VectorType dstType = op.getResultVectorType();
-    VectorType srcType = op.getSourceType().dyn_cast<VectorType>();
+    VectorType srcType = dyn_cast<VectorType>(op.getSourceType());
     Type eltType = dstType.getElementType();
 
     // Scalar to any vector can use splat.
@@ -84,8 +83,7 @@ public:
     //   %x = [%b,%b,%b,%b] : n-D
     if (srcRank < dstRank) {
       // Duplication.
-      VectorType resType =
-          VectorType::get(dstType.getShape().drop_front(), eltType);
+      VectorType resType = VectorType::Builder(dstType).dropDim(0);
       Value bcst =
           rewriter.create<vector::BroadcastOp>(loc, resType, op.getSource());
       Value result = rewriter.create<arith::ConstantOp>(
@@ -127,7 +125,8 @@ public:
     //   ..
     //   %x = [%a,%b,%c,%d]
     VectorType resType =
-        VectorType::get(dstType.getShape().drop_front(), eltType);
+        VectorType::get(dstType.getShape().drop_front(), eltType,
+                        dstType.getScalableDims().drop_front());
     Value result = rewriter.create<arith::ConstantOp>(
         loc, dstType, rewriter.getZeroAttr(dstType));
     if (m == 0) {
@@ -138,6 +137,10 @@ public:
         result = rewriter.create<vector::InsertOp>(loc, bcst, result, d);
     } else {
       // Stetch not at start.
+      if (dstType.getScalableDims()[0]) {
+        // TODO: For scalable vectors we should emit an scf.for loop.
+        return failure();
+      }
       for (int64_t d = 0, dim = dstType.getDimSize(0); d < dim; ++d) {
         Value ext = rewriter.create<vector::ExtractOp>(loc, op.getSource(), d);
         Value bcst = rewriter.create<vector::BroadcastOp>(loc, resType, ext);

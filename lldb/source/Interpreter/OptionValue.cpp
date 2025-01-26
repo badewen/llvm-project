@@ -15,12 +15,29 @@
 using namespace lldb;
 using namespace lldb_private;
 
+OptionValue::OptionValue(const OptionValue &other) {
+  std::lock_guard<std::mutex> lock(other.m_mutex);
+
+  m_parent_wp = other.m_parent_wp;
+  m_callback = other.m_callback;
+  m_value_was_set = other.m_value_was_set;
+
+}
+
+OptionValue& OptionValue::operator=(const OptionValue &other) {
+  std::scoped_lock<std::mutex, std::mutex> lock(m_mutex, other.m_mutex);
+
+  m_parent_wp = other.m_parent_wp;
+  m_callback = other.m_callback;
+  m_value_was_set = other.m_value_was_set;
+
+  return *this;
+}
+
 Status OptionValue::SetSubValue(const ExecutionContext *exe_ctx,
                                 VarSetOperationType op, llvm::StringRef name,
                                 llvm::StringRef value) {
-  Status error;
-  error.SetErrorString("SetSubValue is not supported");
-  return error;
+  return Status::FromErrorString("SetSubValue is not supported");
 }
 
 OptionValueBoolean *OptionValue::GetAsBoolean() {
@@ -252,14 +269,15 @@ const OptionValueUUID *OptionValue::GetAsUUID() const {
 }
 
 std::optional<bool> OptionValue::GetBooleanValue() const {
+  std::lock_guard<std::mutex> lock(m_mutex);
   if (const OptionValueBoolean *option_value = GetAsBoolean())
     return option_value->GetCurrentValue();
   return {};
 }
 
 bool OptionValue::SetBooleanValue(bool new_value) {
-  OptionValueBoolean *option_value = GetAsBoolean();
-  if (option_value) {
+  std::lock_guard<std::mutex> lock(m_mutex);
+  if (OptionValueBoolean *option_value = GetAsBoolean()) {
     option_value->SetCurrentValue(new_value);
     return true;
   }
@@ -267,14 +285,15 @@ bool OptionValue::SetBooleanValue(bool new_value) {
 }
 
 std::optional<char> OptionValue::GetCharValue() const {
+  std::lock_guard<std::mutex> lock(m_mutex);
   if (const OptionValueChar *option_value = GetAsChar())
     return option_value->GetCurrentValue();
   return {};
 }
 
-char OptionValue::SetCharValue(char new_value) {
-  OptionValueChar *option_value = GetAsChar();
-  if (option_value) {
+bool OptionValue::SetCharValue(char new_value) {
+  std::lock_guard<std::mutex> lock(m_mutex);
+  if (OptionValueChar *option_value = GetAsChar()) {
     option_value->SetCurrentValue(new_value);
     return true;
   }
@@ -282,14 +301,15 @@ char OptionValue::SetCharValue(char new_value) {
 }
 
 std::optional<int64_t> OptionValue::GetEnumerationValue() const {
+  std::lock_guard<std::mutex> lock(m_mutex);
   if (const OptionValueEnumeration *option_value = GetAsEnumeration())
     return option_value->GetCurrentValue();
   return {};
 }
 
 bool OptionValue::SetEnumerationValue(int64_t value) {
-  OptionValueEnumeration *option_value = GetAsEnumeration();
-  if (option_value) {
+  std::lock_guard<std::mutex> lock(m_mutex);
+  if (OptionValueEnumeration *option_value = GetAsEnumeration()) {
     option_value->SetCurrentValue(value);
     return true;
   }
@@ -297,15 +317,15 @@ bool OptionValue::SetEnumerationValue(int64_t value) {
 }
 
 std::optional<FileSpec> OptionValue::GetFileSpecValue() const {
-  const OptionValueFileSpec *option_value = GetAsFileSpec();
-  if (option_value)
+  std::lock_guard<std::mutex> lock(m_mutex);
+  if (const OptionValueFileSpec *option_value = GetAsFileSpec())
     return option_value->GetCurrentValue();
   return {};
 }
 
 bool OptionValue::SetFileSpecValue(FileSpec file_spec) {
-  OptionValueFileSpec *option_value = GetAsFileSpec();
-  if (option_value) {
+  std::lock_guard<std::mutex> lock(m_mutex);
+  if (OptionValueFileSpec *option_value = GetAsFileSpec()) {
     option_value->SetCurrentValue(file_spec, false);
     return true;
   }
@@ -313,6 +333,7 @@ bool OptionValue::SetFileSpecValue(FileSpec file_spec) {
 }
 
 bool OptionValue::AppendFileSpecValue(FileSpec file_spec) {
+  std::lock_guard<std::mutex> lock(m_mutex);
   if (OptionValueFileSpecList *option_value = GetAsFileSpecList()) {
     option_value->AppendCurrentValue(file_spec);
     return true;
@@ -321,20 +342,22 @@ bool OptionValue::AppendFileSpecValue(FileSpec file_spec) {
 }
 
 std::optional<FileSpecList> OptionValue::GetFileSpecListValue() const {
+  std::lock_guard<std::mutex> lock(m_mutex);
   if (const OptionValueFileSpecList *option_value = GetAsFileSpecList())
     return option_value->GetCurrentValue();
   return {};
 }
 
 std::optional<lldb::Format> OptionValue::GetFormatValue() const {
+  std::lock_guard<std::mutex> lock(m_mutex);
   if (const OptionValueFormat *option_value = GetAsFormat())
     return option_value->GetCurrentValue();
   return {};
 }
 
 bool OptionValue::SetFormatValue(lldb::Format new_value) {
-  OptionValueFormat *option_value = GetAsFormat();
-  if (option_value) {
+  std::lock_guard<std::mutex> lock(m_mutex);
+  if (OptionValueFormat *option_value = GetAsFormat()) {
     option_value->SetCurrentValue(new_value);
     return true;
   }
@@ -342,14 +365,15 @@ bool OptionValue::SetFormatValue(lldb::Format new_value) {
 }
 
 std::optional<lldb::LanguageType> OptionValue::GetLanguageValue() const {
+  std::lock_guard<std::mutex> lock(m_mutex);
   if (const OptionValueLanguage *option_value = GetAsLanguage())
     return option_value->GetCurrentValue();
   return {};
 }
 
 bool OptionValue::SetLanguageValue(lldb::LanguageType new_language) {
-  OptionValueLanguage *option_value = GetAsLanguage();
-  if (option_value) {
+  std::lock_guard<std::mutex> lock(m_mutex);
+  if (OptionValueLanguage *option_value = GetAsLanguage()) {
     option_value->SetCurrentValue(new_language);
     return true;
   }
@@ -357,28 +381,29 @@ bool OptionValue::SetLanguageValue(lldb::LanguageType new_language) {
 }
 
 const FormatEntity::Entry *OptionValue::GetFormatEntity() const {
-  const OptionValueFormatEntity *option_value = GetAsFormatEntity();
-  if (option_value)
+  std::lock_guard<std::mutex> lock(m_mutex);
+  if (const OptionValueFormatEntity *option_value = GetAsFormatEntity())
     return &option_value->GetCurrentValue();
   return nullptr;
 }
 
 const RegularExpression *OptionValue::GetRegexValue() const {
-  const OptionValueRegex *option_value = GetAsRegex();
-  if (option_value)
+  std::lock_guard<std::mutex> lock(m_mutex);
+  if (const OptionValueRegex *option_value = GetAsRegex())
     return option_value->GetCurrentValue();
   return nullptr;
 }
 
 std::optional<int64_t> OptionValue::GetSInt64Value() const {
+  std::lock_guard<std::mutex> lock(m_mutex);
   if (const OptionValueSInt64 *option_value = GetAsSInt64())
     return option_value->GetCurrentValue();
   return {};
 }
 
 bool OptionValue::SetSInt64Value(int64_t new_value) {
-  OptionValueSInt64 *option_value = GetAsSInt64();
-  if (option_value) {
+  std::lock_guard<std::mutex> lock(m_mutex);
+  if (OptionValueSInt64 *option_value = GetAsSInt64()) {
     option_value->SetCurrentValue(new_value);
     return true;
   }
@@ -386,14 +411,15 @@ bool OptionValue::SetSInt64Value(int64_t new_value) {
 }
 
 std::optional<llvm::StringRef> OptionValue::GetStringValue() const {
+  std::lock_guard<std::mutex> lock(m_mutex);
   if (const OptionValueString *option_value = GetAsString())
     return option_value->GetCurrentValueAsRef();
   return {};
 }
 
 bool OptionValue::SetStringValue(llvm::StringRef new_value) {
-  OptionValueString *option_value = GetAsString();
-  if (option_value) {
+  std::lock_guard<std::mutex> lock(m_mutex);
+  if (OptionValueString *option_value = GetAsString()) {
     option_value->SetCurrentValue(new_value);
     return true;
   }
@@ -401,30 +427,31 @@ bool OptionValue::SetStringValue(llvm::StringRef new_value) {
 }
 
 std::optional<uint64_t> OptionValue::GetUInt64Value() const {
+  std::lock_guard<std::mutex> lock(m_mutex);
   if (const OptionValueUInt64 *option_value = GetAsUInt64())
     return option_value->GetCurrentValue();
   return {};
 }
 
 bool OptionValue::SetUInt64Value(uint64_t new_value) {
-  OptionValueUInt64 *option_value = GetAsUInt64();
-  if (option_value) {
+  std::lock_guard<std::mutex> lock(m_mutex);
+  if (OptionValueUInt64 *option_value = GetAsUInt64()) {
     option_value->SetCurrentValue(new_value);
     return true;
   }
   return false;
 }
 
-UUID OptionValue::GetUUIDValue() const {
-  const OptionValueUUID *option_value = GetAsUUID();
-  if (option_value)
+std::optional<UUID> OptionValue::GetUUIDValue() const {
+  std::lock_guard<std::mutex> lock(m_mutex);
+  if (const OptionValueUUID *option_value = GetAsUUID())
     return option_value->GetCurrentValue();
-  return UUID();
+  return {};
 }
 
 bool OptionValue::SetUUIDValue(const UUID &uuid) {
-  OptionValueUUID *option_value = GetAsUUID();
-  if (option_value) {
+  std::lock_guard<std::mutex> lock(m_mutex);
+  if (OptionValueUUID *option_value = GetAsUUID()) {
     option_value->SetCurrentValue(uuid);
     return true;
   }
@@ -432,12 +459,14 @@ bool OptionValue::SetUUIDValue(const UUID &uuid) {
 }
 
 std::optional<ArchSpec> OptionValue::GetArchSpecValue() const {
+  std::lock_guard<std::mutex> lock(m_mutex);
   if (const OptionValueArch *option_value = GetAsArch())
     return option_value->GetCurrentValue();
   return {};
 }
 
 bool OptionValue::SetArchSpecValue(ArchSpec arch_spec) {
+    std::lock_guard<std::mutex> lock(m_mutex);
   if (OptionValueArch *option_value = GetAsArch()) {
     option_value->SetCurrentValue(arch_spec, false);
     return true;
@@ -537,7 +566,7 @@ lldb::OptionValueSP OptionValue::CreateValueFromCStringForTypeMask(
   if (value_sp)
     error = value_sp->SetValueFromString(value_cstr, eVarSetOperationAssign);
   else
-    error.SetErrorString("unsupported type mask");
+    error = Status::FromErrorString("unsupported type mask");
   return value_sp;
 }
 
@@ -548,8 +577,8 @@ bool OptionValue::DumpQualifiedName(Stream &strm) const {
     if (m_parent_sp->DumpQualifiedName(strm))
       dumped_something = true;
   }
-  ConstString name(GetName());
-  if (name) {
+  llvm::StringRef name(GetName());
+  if (!name.empty()) {
     if (dumped_something)
       strm.PutChar('.');
     else
@@ -573,39 +602,39 @@ Status OptionValue::SetValueFromString(llvm::StringRef value,
   Status error;
   switch (op) {
   case eVarSetOperationReplace:
-    error.SetErrorStringWithFormat(
+    error = Status::FromErrorStringWithFormat(
         "%s objects do not support the 'replace' operation",
         GetTypeAsCString());
     break;
   case eVarSetOperationInsertBefore:
-    error.SetErrorStringWithFormat(
+    error = Status::FromErrorStringWithFormat(
         "%s objects do not support the 'insert-before' operation",
         GetTypeAsCString());
     break;
   case eVarSetOperationInsertAfter:
-    error.SetErrorStringWithFormat(
+    error = Status::FromErrorStringWithFormat(
         "%s objects do not support the 'insert-after' operation",
         GetTypeAsCString());
     break;
   case eVarSetOperationRemove:
-    error.SetErrorStringWithFormat(
+    error = Status::FromErrorStringWithFormat(
         "%s objects do not support the 'remove' operation", GetTypeAsCString());
     break;
   case eVarSetOperationAppend:
-    error.SetErrorStringWithFormat(
+    error = Status::FromErrorStringWithFormat(
         "%s objects do not support the 'append' operation", GetTypeAsCString());
     break;
   case eVarSetOperationClear:
-    error.SetErrorStringWithFormat(
+    error = Status::FromErrorStringWithFormat(
         "%s objects do not support the 'clear' operation", GetTypeAsCString());
     break;
   case eVarSetOperationAssign:
-    error.SetErrorStringWithFormat(
+    error = Status::FromErrorStringWithFormat(
         "%s objects do not support the 'assign' operation", GetTypeAsCString());
     break;
   case eVarSetOperationInvalid:
-    error.SetErrorStringWithFormat("invalid operation performed on a %s object",
-                                   GetTypeAsCString());
+    error = Status::FromErrorStringWithFormat(
+        "invalid operation performed on a %s object", GetTypeAsCString());
     break;
   }
   return error;

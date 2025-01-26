@@ -1,6 +1,6 @@
 add_mlir_dialect_library(MLIRMemRefDialect
   MemRefDialect.cpp
-  MemRefMem2Reg.cpp
+  MemRefMemorySlot.cpp
   MemRefOps.cpp
   ValueBoundsOpInterfaceImpl.cpp
 
@@ -10,9 +10,6 @@ add_mlir_dialect_library(MLIRMemRefDialect
   DEPENDS
   MLIRMemRefOpsIncGen
 
-  LINK_COMPONENTS
-  Core
-
   LINK_LIBS PUBLIC
   MLIRArithDialect
   MLIRArithUtils
@@ -21,6 +18,7 @@ add_mlir_dialect_library(MLIRMemRefDialect
   MLIRDialectUtils
   MLIRInferTypeOpInterface
   MLIRIR
+  MLIRMemorySlotInterfaces
   MLIRShapedOpInterfaces
   MLIRSideEffectInterfaces
   MLIRValueBoundsOpInterface

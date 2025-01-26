@@ -11,6 +11,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "mlir/Dialect/Bufferization/Transforms/BufferUtils.h"
+
+#include "mlir/Dialect/Bufferization/IR/BufferizableOpInterface.h"
 #include "mlir/Dialect/Bufferization/Transforms/Bufferize.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/MemRef/Utils/MemRefUtils.h"
@@ -68,7 +70,7 @@ void BufferPlacementAllocs::build(Operation *op) {
         [=](MemoryEffects::EffectInstance &it) {
           Value value = it.getValue();
           return isa<MemoryEffects::Allocate>(it.getEffect()) && value &&
-                 value.isa<OpResult>() &&
+                 isa<OpResult>(value) &&
                  it.getResource() !=
                      SideEffects::AutomaticAllocationScopeResource::get();
         });
@@ -96,52 +98,6 @@ BufferPlacementTransformationBase::BufferPlacementTransformationBase(
     Operation *op)
     : aliases(op), allocs(op), liveness(op) {}
 
-/// Returns true if the given operation represents a loop by testing whether it
-/// implements the `LoopLikeOpInterface` or the `RegionBranchOpInterface`. In
-/// the case of a `RegionBranchOpInterface`, it checks all region-based control-
-/// flow edges for cycles.
-bool BufferPlacementTransformationBase::isLoop(Operation *op) {
-  // If the operation implements the `LoopLikeOpInterface` it can be considered
-  // a loop.
-  if (isa<LoopLikeOpInterface>(op))
-    return true;
-
-  // If the operation does not implement the `RegionBranchOpInterface`, it is
-  // (currently) not possible to detect a loop.
-  RegionBranchOpInterface regionInterface;
-  if (!(regionInterface = dyn_cast<RegionBranchOpInterface>(op)))
-    return false;
-
-  // Recurses into a region using the current region interface to find potential
-  // cycles.
-  SmallPtrSet<Region *, 4> visitedRegions;
-  std::function<bool(Region *)> recurse = [&](Region *current) {
-    if (!current)
-      return false;
-    // If we have found a back edge, the parent operation induces a loop.
-    if (!visitedRegions.insert(current).second)
-      return true;
-    // Recurses into all region successors.
-    SmallVector<RegionSuccessor, 2> successors;
-    regionInterface.getSuccessorRegions(current->getRegionNumber(), successors);
-    for (RegionSuccessor &regionEntry : successors)
-      if (recurse(regionEntry.getSuccessor()))
-        return true;
-    return false;
-  };
-
-  // Start with all entry regions and test whether they induce a loop.
-  SmallVector<RegionSuccessor, 2> successorRegions;
-  regionInterface.getSuccessorRegions(/*index=*/std::nullopt, successorRegions);
-  for (RegionSuccessor &regionEntry : successorRegions) {
-    if (recurse(regionEntry.getSuccessor()))
-      return true;
-    visitedRegions.clear();
-  }
-
-  return false;
-}
-
 //===----------------------------------------------------------------------===//
 // BufferPlacementTransformationBase
 //===----------------------------------------------------------------------===//
@@ -149,7 +105,7 @@ bool BufferPlacementTransformationBase::isLoop(Operation *op) {
 FailureOr<memref::GlobalOp>
 bufferization::getGlobalFor(arith::ConstantOp constantOp, uint64_t alignment,
                             Attribute memorySpace) {
-  auto type = constantOp.getType().cast<RankedTensorType>();
+  auto type = cast<RankedTensorType>(constantOp.getType());
   auto moduleOp = constantOp->getParentOfType<ModuleOp>();
   if (!moduleOp)
     return failure();
@@ -184,15 +140,16 @@ bufferization::getGlobalFor(arith::ConstantOp constantOp, uint64_t alignment,
       alignment > 0 ? IntegerAttr::get(globalBuilder.getI64Type(), alignment)
                     : IntegerAttr();
 
-  BufferizeTypeConverter typeConverter;
-  auto memrefType = typeConverter.convertType(type).cast<MemRefType>();
+  // Memref globals always have an identity layout.
+  auto memrefType =
+      cast<MemRefType>(getMemRefTypeWithStaticIdentityLayout(type));
   if (memorySpace)
     memrefType = MemRefType::Builder(memrefType).setMemorySpace(memorySpace);
   auto global = globalBuilder.create<memref::GlobalOp>(
       constantOp.getLoc(), (Twine("__constant_") + os.str()).str(),
       /*sym_visibility=*/globalBuilder.getStringAttr("private"),
       /*type=*/memrefType,
-      /*initial_value=*/constantOp.getValue().cast<ElementsAttr>(),
+      /*initial_value=*/cast<ElementsAttr>(constantOp.getValue()),
       /*constant=*/true,
       /*alignment=*/memrefAlignment);
   symbolTable.insert(global);

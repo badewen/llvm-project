@@ -7,6 +7,7 @@ add_lldb_library(lldbPluginExpressionParserClang
   ClangASTSource.cpp
   ClangDeclVendor.cpp
   ClangExpressionDeclMap.cpp
+  ClangExpressionHelper.cpp
   ClangExpressionParser.cpp
   ClangExpressionSourceCode.cpp
   ClangExpressionUtil.cpp
@@ -36,6 +37,7 @@ add_lldb_library(lldbPluginExpressionParserClang
     lldbSymbol
     lldbTarget
     lldbUtility
+    lldbValueObject
     lldbPluginCPlusPlusLanguage
     lldbPluginCPPRuntime
     lldbPluginObjCRuntime

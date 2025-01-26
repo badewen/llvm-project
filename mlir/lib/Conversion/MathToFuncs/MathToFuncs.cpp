@@ -106,7 +106,7 @@ LogicalResult
 VecOpToScalarOp<Op>::matchAndRewrite(Op op, PatternRewriter &rewriter) const {
   Type opType = op.getType();
   Location loc = op.getLoc();
-  auto vecType = opType.template dyn_cast<VectorType>();
+  auto vecType = dyn_cast<VectorType>(opType);
 
   if (!vecType)
     return rewriter.notifyMatchFailure(op, "not a vector operation");
@@ -117,7 +117,7 @@ VecOpToScalarOp<Op>::matchAndRewrite(Op op, PatternRewriter &rewriter) const {
 
   Type resultElementType = vecType.getElementType();
   Attribute initValueAttr;
-  if (resultElementType.isa<FloatType>())
+  if (isa<FloatType>(resultElementType))
     initValueAttr = FloatAttr::get(resultElementType, 0.0);
   else
     initValueAttr = IntegerAttr::get(resultElementType, 0);
@@ -183,7 +183,7 @@ static FunctionType getElementalFuncTypeForOp(Operation *op) {
 ///   }
 /// }
 static func::FuncOp createElementIPowIFunc(ModuleOp *module, Type elementType) {
-  assert(elementType.isa<IntegerType>() &&
+  assert(isa<IntegerType>(elementType) &&
          "non-integer element type for IPowIOp");
 
   ImplicitLocOpBuilder builder =
@@ -361,7 +361,7 @@ static func::FuncOp createElementIPowIFunc(ModuleOp *module, Type elementType) {
 LogicalResult
 IPowIOpLowering::matchAndRewrite(math::IPowIOp op,
                                  PatternRewriter &rewriter) const {
-  auto baseType = op.getOperands()[0].getType().dyn_cast<IntegerType>();
+  auto baseType = dyn_cast<IntegerType>(op.getOperands()[0].getType());
 
   if (!baseType)
     return rewriter.notifyMatchFailure(op, "non-integer base operand");
@@ -411,8 +411,8 @@ IPowIOpLowering::matchAndRewrite(math::IPowIOp op,
 /// }
 static func::FuncOp createElementFPowIFunc(ModuleOp *module,
                                            FunctionType funcType) {
-  auto baseType = funcType.getInput(0).cast<FloatType>();
-  auto powType = funcType.getInput(1).cast<IntegerType>();
+  auto baseType = cast<FloatType>(funcType.getInput(0));
+  auto powType = cast<IntegerType>(funcType.getInput(1));
   ImplicitLocOpBuilder builder =
       ImplicitLocOpBuilder::atBlockEnd(module->getLoc(), module->getBody());
 
@@ -586,7 +586,7 @@ static func::FuncOp createElementFPowIFunc(ModuleOp *module,
 LogicalResult
 FPowIOpLowering::matchAndRewrite(math::FPowIOp op,
                                  PatternRewriter &rewriter) const {
-  if (op.getType().template dyn_cast<VectorType>())
+  if (dyn_cast<VectorType>(op.getType()))
     return rewriter.notifyMatchFailure(op, "non-scalar operation");
 
   FunctionType funcType = getElementalFuncTypeForOp(op);
@@ -649,7 +649,7 @@ FPowIOpLowering::matchAndRewrite(math::FPowIOp op,
 ///   return %out: i32
 /// }
 static func::FuncOp createCtlzFunc(ModuleOp *module, Type elementType) {
-  if (!elementType.isa<IntegerType>()) {
+  if (!isa<IntegerType>(elementType)) {
     LLVM_DEBUG({
       DBGS() << "non-integer element type for CtlzFunc; type was: ";
       elementType.print(llvm::dbgs());
@@ -751,7 +751,7 @@ static func::FuncOp createCtlzFunc(ModuleOp *module, Type elementType) {
 /// operation.
 LogicalResult CtlzOpLowering::matchAndRewrite(math::CountLeadingZerosOp op,
                                               PatternRewriter &rewriter) const {
-  if (op.getType().template dyn_cast<VectorType>())
+  if (dyn_cast<VectorType>(op.getType()))
     return rewriter.notifyMatchFailure(op, "non-scalar operation");
 
   Type type = getElementTypeOrSelf(op.getResult().getType());
@@ -781,6 +781,9 @@ private:
   // or equal to minWidthOfFPowIExponent option value.
   bool isFPowIConvertible(math::FPowIOp op);
 
+  // Reture true, if operation is integer type.
+  bool isConvertible(Operation *op);
+
   // Generate outlined implementations for power operations
   // and store them in funcImpls map.
   void generateOpImplementations();
@@ -794,8 +797,12 @@ private:
 
 bool ConvertMathToFuncsPass::isFPowIConvertible(math::FPowIOp op) {
   auto expTy =
-      getElementTypeOrSelf(op.getRhs().getType()).dyn_cast<IntegerType>();
+      dyn_cast<IntegerType>(getElementTypeOrSelf(op.getRhs().getType()));
   return (expTy && expTy.getWidth() >= minWidthOfFPowIExponent);
+}
+
+bool ConvertMathToFuncsPass::isConvertible(Operation *op) {
+  return isa<IntegerType>(getElementTypeOrSelf(op->getResult(0).getType()));
 }
 
 void ConvertMathToFuncsPass::generateOpImplementations() {
@@ -804,7 +811,7 @@ void ConvertMathToFuncsPass::generateOpImplementations() {
   module.walk([&](Operation *op) {
     TypeSwitch<Operation *>(op)
         .Case<math::CountLeadingZerosOp>([&](math::CountLeadingZerosOp op) {
-          if (!convertCtlz)
+          if (!convertCtlz || !isConvertible(op))
             return;
           Type resultType = getElementTypeOrSelf(op.getResult().getType());
 
@@ -816,6 +823,9 @@ void ConvertMathToFuncsPass::generateOpImplementations() {
             entry.first->second = createCtlzFunc(&module, resultType);
         })
         .Case<math::IPowIOp>([&](math::IPowIOp op) {
+          if (!isConvertible(op))
+            return;
+
           Type resultType = getElementTypeOrSelf(op.getResult().getType());
 
           // Generate the software implementation of this operation,
@@ -873,9 +883,12 @@ void ConvertMathToFuncsPass::runOnOperation() {
                          func::FuncDialect, scf::SCFDialect,
                          vector::VectorDialect>();
 
-  target.addIllegalOp<math::IPowIOp>();
-  if (convertCtlz)
-    target.addIllegalOp<math::CountLeadingZerosOp>();
+  target.addDynamicallyLegalOp<math::IPowIOp>(
+      [this](math::IPowIOp op) { return !isConvertible(op); });
+  if (convertCtlz) {
+    target.addDynamicallyLegalOp<math::CountLeadingZerosOp>(
+        [this](math::CountLeadingZerosOp op) { return !isConvertible(op); });
+  }
   target.addDynamicallyLegalOp<math::FPowIOp>(
       [this](math::FPowIOp op) { return !isFPowIConvertible(op); });
   if (failed(applyPartialConversion(module, target, std::move(patterns))))

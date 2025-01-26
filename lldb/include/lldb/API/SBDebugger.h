@@ -14,6 +14,13 @@
 #include "lldb/API/SBDefines.h"
 #include "lldb/API/SBPlatform.h"
 
+namespace lldb_private {
+class CommandPluginInterfaceImplementation;
+namespace python {
+class SWIGBridge;
+}
+} // namespace lldb_private
+
 namespace lldb {
 
 #ifndef SWIG
@@ -35,23 +42,26 @@ public:
 
 class LLDB_API SBDebugger {
 public:
-  FLAGS_ANONYMOUS_ENUM(){
-      eBroadcastBitProgress = (1 << 0),
-      eBroadcastBitWarning = (1 << 1),
-      eBroadcastBitError = (1 << 2),
+  FLAGS_ANONYMOUS_ENUM() {
+    eBroadcastBitProgress = lldb::DebuggerBroadcastBit::eBroadcastBitProgress,
+    eBroadcastBitWarning = lldb::DebuggerBroadcastBit::eBroadcastBitWarning,
+    eBroadcastBitError = lldb::DebuggerBroadcastBit::eBroadcastBitError,
+    eBroadcastBitProgressCategory =
+        lldb::DebuggerBroadcastBit::eBroadcastBitProgressCategory,
+    eBroadcastBitExternalProgress =
+        lldb::DebuggerBroadcastBit::eBroadcastBitExternalProgress,
+    eBroadcastBitExternalProgressCategory =
+        lldb::DebuggerBroadcastBit::eBroadcastBitExternalProgressCategory,
   };
-
   SBDebugger();
 
   SBDebugger(const lldb::SBDebugger &rhs);
 
-#ifndef SWIG
-  SBDebugger(const lldb::DebuggerSP &debugger_sp);
-#endif
-
   ~SBDebugger();
 
   static const char *GetBroadcasterClass();
+
+  static bool SupportsLanguage(lldb::LanguageType language);
 
   lldb::SBBroadcaster GetBroadcaster();
 
@@ -112,7 +122,7 @@ public:
 
   static void Terminate();
 
-  // Deprecated, use the one that takes a source_init_files bool.
+  LLDB_DEPRECATED_FIXME("Use one of the other Create variants", "Create(bool)")
   static lldb::SBDebugger Create();
 
   static lldb::SBDebugger Create(bool source_init_files);
@@ -197,7 +207,7 @@ public:
   lldb::SBCommandInterpreter GetCommandInterpreter();
 
   void HandleCommand(const char *command);
-  
+
   void RequestInterrupt();
   void CancelInterruptRequest();
   bool InterruptRequested();
@@ -205,9 +215,13 @@ public:
   lldb::SBListener GetListener();
 
 #ifndef SWIG
+  LLDB_DEPRECATED_FIXME(
+      "Use HandleProcessEvent(const SBProcess &, const SBEvent &, SBFile, "
+      "SBFile) or HandleProcessEvent(const SBProcess &, const SBEvent &, "
+      "FileSP, FileSP)",
+      "HandleProcessEvent(const SBProcess &, const SBEvent &, SBFile, SBFile)")
   void HandleProcessEvent(const lldb::SBProcess &process,
-                          const lldb::SBEvent &event, FILE *out,
-                          FILE *err); // DEPRECATED
+                          const lldb::SBEvent &event, FILE *out, FILE *err);
 #endif
 
   void HandleProcessEvent(const lldb::SBProcess &process,
@@ -242,7 +256,7 @@ public:
 
   uint32_t GetIndexOfTarget(lldb::SBTarget target);
 
-  lldb::SBTarget FindTargetWithProcessID(pid_t pid);
+  lldb::SBTarget FindTargetWithProcessID(lldb::pid_t pid);
 
   lldb::SBTarget FindTargetWithFileAndArch(const char *filename,
                                            const char *arch);
@@ -294,6 +308,8 @@ public:
 
   bool GetUseColor() const;
 
+  bool SetShowInlineDiagnostics(bool);
+
   bool SetUseSourceCache(bool use_source_cache);
 
   bool GetUseSourceCache() const;
@@ -320,11 +336,25 @@ public:
 
   void SetLoggingCallback(lldb::LogOutputCallback log_callback, void *baton);
 
+  /// Clear all previously added callbacks and only add the given one.
+  LLDB_DEPRECATED_FIXME("Use AddDestroyCallback and RemoveDestroyCallback",
+                        "AddDestroyCallback")
   void SetDestroyCallback(lldb::SBDebuggerDestroyCallback destroy_callback,
                           void *baton);
 
-  // DEPRECATED
+  /// Add a callback for when the debugger is destroyed. Return a token, which
+  /// can be used to remove said callback. Multiple callbacks can be added by
+  /// calling this function multiple times, and will be invoked in FIFO order.
+  lldb::callback_token_t
+  AddDestroyCallback(lldb::SBDebuggerDestroyCallback destroy_callback,
+                     void *baton);
+
+  /// Remove the specified callback. Return true if successful.
+  bool RemoveDestroyCallback(lldb::callback_token_t token);
+
 #ifndef SWIG
+  LLDB_DEPRECATED_FIXME("Use DispatchInput(const void *, size_t)",
+                        "DispatchInput(const void *, size_t)")
   void DispatchInput(void *baton, const void *data, size_t data_len);
 #endif
 
@@ -356,6 +386,10 @@ public:
 
   void SetTerminalWidth(uint32_t term_width);
 
+  uint32_t GetTerminalHeight() const;
+
+  void SetTerminalHeight(uint32_t term_height);
+
   lldb::user_id_t GetID();
 
   const char *GetPrompt() const;
@@ -372,8 +406,10 @@ public:
 
   void SetREPLLanguage(lldb::LanguageType repl_lang);
 
+  LLDB_DEPRECATED("SBDebugger::GetCloseInputOnEOF() is deprecated.")
   bool GetCloseInputOnEOF() const;
 
+  LLDB_DEPRECATED("SBDebugger::SetCloseInputOnEOF() is deprecated.")
   void SetCloseInputOnEOF(bool b);
 
   SBTypeCategory GetCategory(const char *category_name);
@@ -397,6 +433,11 @@ public:
   SBTypeFilter GetFilterForType(SBTypeNameSpecifier);
 
   SBTypeSynthetic GetSyntheticForType(SBTypeNameSpecifier);
+
+  /// Clear collected statistics for targets belonging to this debugger. This
+  /// includes clearing symbol table and debug info parsing/index time for all
+  /// modules, breakpoint resolve time and target statistics.
+  void ResetStatistics();
 
 #ifndef SWIG
   /// Run the command interpreter.
@@ -464,14 +505,23 @@ public:
   SBTrace LoadTraceFromFile(SBError &error,
                             const SBFileSpec &trace_description_file);
 
+protected:
+  friend class lldb_private::CommandPluginInterfaceImplementation;
+  friend class lldb_private::python::SWIGBridge;
+
+  SBDebugger(const lldb::DebuggerSP &debugger_sp);
+
 private:
   friend class SBCommandInterpreter;
   friend class SBInputReader;
   friend class SBListener;
   friend class SBProcess;
   friend class SBSourceManager;
+  friend class SBStructuredData;
+  friend class SBPlatform;
   friend class SBTarget;
   friend class SBTrace;
+  friend class SBProgress;
 
   lldb::SBTarget FindTargetWithLLDBProcess(const lldb::ProcessSP &processSP);
 
